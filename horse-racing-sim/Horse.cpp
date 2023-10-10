@@ -1,4 +1,5 @@
 // Standard Library Includes
+#include "math.h"
 #include <iostream>
 #include <random>
 
@@ -26,9 +27,27 @@ void Horse::sendToGate() {
 }
 
 void Horse::displayHorse(int goalLength) {
-    int numDashes = distanceTraveled % goalLength;
+    // Find the number of dashes to print by finding the percentage of the distance traveled
+    // with respect to the total goal length and drawing 1 dash for every 2%
+    int numDashes = min(floor((distanceTraveled / goalLength) * 50), 50.f);
     for (int i = 0; i < numDashes; i++) {
         cout << "-";
     }
-    cout << ">";
+    if (distanceTraveled < goalLength) {
+        cout << ">";
+        int numSpaces = 50 - numDashes - 1;
+        if (numSpaces > 0)
+            for (int i = 0; i < numSpaces; i++) {
+                cout << " ";
+            }
+    }
+    cout << "|";
+    // If in the last second the horse moves past the goal line, display the goal line before the arrow
+    if (distanceTraveled > goalLength) {
+        hasReachedGoal = true;
+        racesWon++;
+        cout << ">";
+    }
+
+    cout << horseName << ", ridden by " << riderName << endl;
 }
