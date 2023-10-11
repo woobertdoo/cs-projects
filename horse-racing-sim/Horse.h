@@ -6,6 +6,7 @@ using namespace std;
 
 class Horse {
   private:
+    const int displayLength = 50;
     string horseName;
     string riderName;
     int maxRunningDistPerSecond;
@@ -26,6 +27,7 @@ class Horse {
     void runASecond();
     void sendToGate();
     void displayHorse(int);
+    void displayStats();
 };
 
 #endif

@@ -24,6 +24,8 @@ int main() {
         race(horses, numHorses, raceOver);
         char raceAgain;
         if (raceOver) {
+            for (int i = 0; i < numHorses; i++)
+                horses[i]->displayStats();
             cout << "Would you like to race again with the same horses?(y/n) ";
             cin >> raceAgain;
             if (raceAgain == 'n' || raceAgain == 'N')
@@ -53,8 +55,9 @@ void getHorseInfo(Horse *horses[], int numHorses) {
                                                // of the horse and rider
         Horse *tempHorse = nullptr;            // Create a dummy variable to store a single Horse pointer to populate
                                                // an index of the array
-        cout << "Horse #" << i + 1 << endl;    // Let the user know which horse they are working on
-        cin.ignore();
+        cout << "Horse #" << i + 1 << "\n";    // Let the user know which horse they are working on
+        if (i == 0)
+            cin.ignore();
         cout << "Enter the horse's name: ";
         getline(cin, horseName);
         while (horseName == "") {
@@ -98,10 +101,12 @@ void race(Horse *horses[], int numHorses, bool &raceOver) {
             }
         }
 
-        cout << "Would you like to continue the race?(y/n) ";
-        cin >> raceAgain;
-        if (raceAgain == 'n' || raceAgain == 'N')
-            raceOver = true;
+        if (!raceOver) {
+            cout << "Would you like to continue the race?(y/n) ";
+            cin >> raceAgain;
+            if (raceAgain == 'n' || raceAgain == 'N')
+                raceOver = true;
+        }
     }
 
     finishRace(winner, raceOver);
