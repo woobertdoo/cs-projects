@@ -24,10 +24,13 @@ int main() {
         race(horses, numHorses, raceOver);
         char raceAgain;
         if (raceOver) {
-            for (int i = 0; i < numHorses; i++)
+            for (int i = 0; i < numHorses; i++) {
                 horses[i]->displayStats();
+                horses[i]->sendToGate();
+            }
             cout << "Would you like to race again with the same horses?(y/n) ";
             cin >> raceAgain;
+            raceOver = false;
             if (raceAgain == 'n' || raceAgain == 'N')
                 shouldExit = true;
         }

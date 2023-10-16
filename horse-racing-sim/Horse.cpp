@@ -25,6 +25,7 @@ void Horse::runASecond() {
     Use in the event that the user wants to simulate another race with the same set of horses. */
 void Horse::sendToGate() {
     distanceTraveled = 0;
+    hasReachedGoal = false;
 }
 
 /* Displays the horse's progress in the race */
