@@ -70,13 +70,16 @@ int main() {
                 }
 
             } catch (DelimiterStack::MismatchedDelimiter) {
+                // Let the user know where the mismatched delimiter is
                 cout << "Left delimiter " << poppedNodeChar << " at line " << poppedNodeLine
                      << ", column " << poppedNodeCol << " does not match right delimiter "
-                     << currentChar << " at line " << lineCount << ", column " << i + 1 << ".";
+                     << currentChar << " at line " << lineCount << ", column " << i + 1 << ".\n";
+                // Push the opening delimiter back onto the stack so the user can fix their error
+                delimeterStack.push(poppedNodeChar, poppedNodeLine, poppedNodeCol);
 
             } catch (DelimiterStack::MissingOpeningDelimter) {
                 cout << "Right delimiter " << currentChar << " at line " << lineCount << ", column "
-                     << i + 1 << " has no matching left delimiter.";
+                     << i + 1 << " has no matching left delimiter.\n";
             }
             // reset the current opening delimiter so it doesn't try to compare unfinished
             // code blocks
@@ -90,8 +93,11 @@ int main() {
             throw DelimiterStack::MissingClosingDelimiter();
         }
     } catch (DelimiterStack::MissingClosingDelimiter) {
-        cout << "Left delimiter " << poppedNodeChar << " at line " << poppedNodeLine << ", column "
-             << poppedNodeCol << " has no matching closing delimiter.";
+        while (!delimeterStack.isEmpty()) {
+            delimeterStack.popDelimiter(poppedNodeChar, poppedNodeLine, poppedNodeCol);
+            cout << "Left delimiter " << poppedNodeChar << " at line " << poppedNodeLine
+                 << ", column " << poppedNodeCol << " has no matching closing delimiter.\n";
+        }
     }
 
     return 0;
