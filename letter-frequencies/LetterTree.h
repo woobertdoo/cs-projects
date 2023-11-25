@@ -17,8 +17,6 @@ private:
 
     void insert(TreeNode *&, TreeNode *&);
     void destroySubTree(TreeNode *);
-    void deleteNode(int, TreeNode *&);
-    void makeDeletion(TreeNode *&);
     void display(TreeNode *) const;
 
 public:
@@ -26,8 +24,6 @@ public:
     ~LetterTree() { destroySubTree(root); }
 
     void insertNode(string);
-    bool searchNode(string);
-    void remove(string);
 
     void display() const { display(root); }
 };

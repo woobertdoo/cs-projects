@@ -36,3 +36,24 @@ void LetterTree::insertNode(string letters) {
 
     insert(root, newNode);
 }
+
+/* Displays the occurences of each letter combination recursively, using an inorder display approach
+ */
+void LetterTree::display(TreeNode *nodePtr) const {
+    if (nodePtr) {
+        display(nodePtr->left);
+        cout << nodePtr->letters << ": " << nodePtr->occurences << endl;
+        display(nodePtr->right);
+    }
+}
+
+/* Deletes all the nodes from a subtree */
+void LetterTree::destroySubTree(TreeNode *nodePtr) {
+    if (nodePtr) {
+        if (nodePtr->left)
+            destroySubTree(nodePtr->left);
+        if (nodePtr->right)
+            destroySubTree(nodePtr->right);
+        delete nodePtr;
+    }
+}
