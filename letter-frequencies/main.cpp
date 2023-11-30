@@ -40,7 +40,8 @@ void parseTextToTree(LetterTree &tree, ifstream &data) {
             while (charPos < fileText.length() - currLength) {
                 tempstr = "";
                 for (int i = 0; i <= currLength; i++) {
-                    tempstr += fileText[charPos + i];
+                    tempstr +=
+                        tolower(fileText[charPos + i]); // convert the characters to lowercase
                 }
                 tree.insertNode(tempstr);
                 charPos++;

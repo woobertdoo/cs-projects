@@ -11,12 +11,19 @@ using namespace std;
 void LetterTree::insert(TreeNode *&nodePtr, TreeNode *&newNode) {
     if (nodePtr == nullptr) {
         nodePtr = newNode; // If there are no nodes in the tree, insert newNode as the root
-    } else if (newNode->letters < nodePtr->letters) {
-        insert(nodePtr->left, newNode); // If the letters in newNode appear before the current
-                                        // node's letters alphabetically, search the left branch
-    } else if (newNode->letters > nodePtr->letters) {
-        insert(nodePtr->right, newNode); // If the letters in newNode appear after the current
-                                         // node's letters alphabetically, search the right branch
+    } else if (newNode->letters.length() > nodePtr->letters.length() ||
+               newNode->letters > nodePtr->letters) {
+        /* if newNode's string is longer than nodePtr's,
+         or they are the same length and newNode comes after nodePtr alphabetically,
+         add it to the right of nodePtr */
+        insert(nodePtr->right, newNode);
+    } else if (newNode->letters.length() < nodePtr->letters.length() ||
+               newNode->letters < nodePtr->letters) {
+        /* if newNode's string is shorter than nodePtr's,
+        of they are the same length and newNode comes before nodePtr alphabetically,
+        add it to the left of nodePtr */
+        insert(nodePtr->left, newNode);
+
     } else {
         nodePtr->occurences++; // If the letter combination in newNode already have a node in the
                                // tree, increment the occurences counter.
