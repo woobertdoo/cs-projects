@@ -2,4 +2,5 @@
 #include <stdlib.h>
 #include <cstring>
 
-int countCharacters(const char* content);
+// Takes a body of text as a `char` array and counts all occurences of `target` char 
+int countCharacters(const char* content, const char target);
