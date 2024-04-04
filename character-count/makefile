@@ -13,5 +13,5 @@ OBJ = main.o countCharacters.o caseConversion.o
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Create executable from objects
-project3: $(OBJ)
+project4: $(OBJ)
 	$(CC) $(CFLAGS) $^ -o $@
