@@ -32,7 +32,7 @@ const string OPENING_DELIMITERS = "{[("; // String of acceptable opening delimit
 const string CLOSING_DELIMITERS = "}])"; // String of acceptable closing delimiters
 
 int main() {
-    // variable declarations and initializations
+     // variable declarations and initializations
     DelimiterStack delimeterStack;
     string currentLine = "";
     char poppedNodeChar; // character of a popped node
