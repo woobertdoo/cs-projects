@@ -24,9 +24,19 @@ A basic racing simulator
 ### character-count
 A command line tool that will take a given input file, convert it to either all caps or all lowercase, and count occurences of a user-provided character
 
+### calcTest
+A basic addition program. This program highlights using multiple files, unit testing, and makefiles.
+
+### prime-sums
+This program takes an input array and outputs all the pairs of prime numbers that have a sum less than 50. This program highlights usage of process forking.
+
+### shm-sum
+This program takes an input array and outputs the first pair of numbers that has a sum of 19. This program highlights usage of shared memory between processes.
 
 ## CMP SCI 3010: Full Stack Web Development
 
+### project-1
+The first of a sequence of projects in creating a full web application. This iteration includes HTML and CSS.
 
 
 ## CMP SCI 3130: Design and Analysis of Algorithms
