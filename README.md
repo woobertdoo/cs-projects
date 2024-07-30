@@ -7,7 +7,7 @@ This is a repository featuring all the projects I have made while getting my com
 
 ### pig-latin
 A basic console application that takes an input string from the user and converts it to "pig latin".
-Ex: User inputs "I am a student", output is "Iway amway away tudentsay."
+Ex: User inputs "I am a student", output is "Iway amay away tudentsay."
 
 ### array-war
 This program takes two int arrays of equal length. For each index in the arrays, it checks which array has the larger element
@@ -18,6 +18,11 @@ A console application that takes a snippet of code and checks for matching brace
 
 ### horse-racing-sim
 A basic racing simulator
+
+## CMP SCI 2261: Object-Oriented Programming
+
+### smart-parking
+A console-based application meant to mimic a smart parking lot application. It features aspecsts of object-oriented design like classes, interfaces, and polymorphism.
 
 ## CMP SCI 2750: Linux Environment and System Programming
 
