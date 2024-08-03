@@ -1,0 +1,23 @@
+{
+  "name": "cmpsci3010-proj3",
+  "version": "1.0.0",
+  "main": "app.js",
+  "repository": {
+    "type": "git",
+    "url": "https://comp.umsl.edu/gitlab/jah8nr/cmpsci3010-proj3"
+  },
+  "author": "Jamie Harris",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "nodemon": "^3.1.4",
+    "bcrypt": "^5.1.0",
+    "pg": "^8.11.0",
+    "winston": "^3.9.0"
+  },
+  "prettier": {
+    "tabWidth": 4
+  }
+}

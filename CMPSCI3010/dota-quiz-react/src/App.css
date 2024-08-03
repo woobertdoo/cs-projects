@@ -1,0 +1,222 @@
+/* Universal Styles */
+
+html {
+  --steel-blue: #3c5585;
+  --light-stone: #929FB6;
+  --light-stone-shadow: #182234;
+}
+
+body {
+  min-height: 100vh;
+  background-image: linear-gradient(var(--steel-blue), var(--light-stone));
+}
+
+@media (max-width: 576px) {
+  .web-heading {
+    font-size: 100vw;
+  }
+}
+
+#header-icon {
+  height: 90%;
+  padding-top: 2%;
+}
+
+#header-icon img {
+  max-width: 360px;
+  width: 90%;
+  height: auto;
+}
+
+.web-heading {
+  margin-top: 5vh;
+  color: var(--light-stone);
+  height: 20vh;
+  max-height: 20vh;
+  text-shadow: 5px 5px 3px var(--light-stone-shadow);
+  text-decoration: none;
+  color: var(--light-stone);
+}
+
+.web-heading h1 {
+  font-size: 108pt;
+  height: 100%;
+}
+
+.web-heading a {
+
+  text-decoration: none;
+  color: var(--light-stone);
+}
+
+
+@media (max-width: 1199px) {
+  .web-heading h1 {
+    font-size: 96pt;
+  }
+}
+
+@media (max-width: 991px) {
+  .web-heading h1 {
+    font-size: 72pt;
+  }
+
+
+}
+
+@media (max-width: 767px) {
+  .web-heading h1 {
+    font-size: 64pt;
+  }
+
+  #header-icon {
+    visibility: hidden;
+  }
+}
+
+@media (max-width: 575px) {
+  .web-heading h1 {
+    font-size: 48pt;
+  }
+}
+
+
+.footer {
+  height: 10vh;
+  max-height: 10vh;
+}
+
+.nanum-myeongjo-regular {
+  font-family: "Nanum Myeongjo", serif;
+  font-weight: 400;
+  font-style: bold;
+}
+
+
+/* Universal Form Styles */
+
+.nanum-gothic-coding-regular {
+  font-family: "Nanum Gothic Coding", monospace;
+  font-weight: 600;
+  font-style: normal;
+}
+
+input[type="submit"],
+input[type="reset"] {
+  margin: auto 10px;
+  width: 100px;
+}
+
+label {
+  font-size: 16pt;
+  width: 16%;
+}
+
+input:not(input[type="submit"], input[type="reset"]) {
+  width: 200px;
+}
+
+form {
+  padding-top: 5%;
+  height: 60vh;
+  max-height: 60vh;
+  margin-right: 3.5%;
+}
+
+form .row {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 576px) {
+  label {
+    font-size: 14pt;
+  }
+
+  input:not(input[type="submit"], input[type="reset"]) {
+    width: 200px;
+  }
+}
+
+/* Home Page Styles */
+
+#nav {
+  list-style: none;
+  padding: 2vh;
+  height: 60vh;
+  max-height: 60vh;
+  margin: 0;
+}
+
+.nav-button {
+  margin: 5%;
+  padding: auto;
+  height: 10%;
+  max-height: 10%;
+  background-image: linear-gradient(to top left, var(--steel-blue), var(--light-stone-shadow));
+  border-bottom: 5px solid var(--light-stone-shadow);
+  border-radius: 15px;
+}
+
+.nav-button :is(a:visited, a:link) {
+  text-decoration: none;
+  color: var(--light-stone);
+  text-align: center;
+  margin: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+@media (max-width: 991px) {
+  .nav-button {
+    margin: 10%;
+  }
+}
+
+/* Logout Page Styles */
+#logout {
+  padding: 2vh;
+  height: 60vh;
+  max-height: 60vh;
+  padding-top: 10vh;
+  margin: 0;
+}
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

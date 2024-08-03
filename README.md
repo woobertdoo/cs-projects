@@ -43,6 +43,9 @@ This program takes an input array and outputs the first pair of numbers that has
 ### project-1
 The first of a sequence of projects in creating a full web application. This iteration includes HTML and CSS.
 
+### dota-quiz-react/dota-quiz-server
+These two projects work in tandem to create a full stack version of project-1. This application uses react for the front end and Node.JS, Express, and PostgresSQL for the backend technologies. 
+
 
 ## CMP SCI 3130: Design and Analysis of Algorithms
 
