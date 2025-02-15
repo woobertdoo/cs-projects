@@ -44,7 +44,7 @@ This program takes an input array and outputs the first pair of numbers that has
 The first of a sequence of projects in creating a full web application. This iteration includes HTML and CSS.
 
 ### dota-quiz-react/dota-quiz-server
-These two projects work in tandem to create a full stack version of project-1. This application uses react for the front end and Node.JS, Express, and PostgresSQL for the backend technologies. 
+These two projects work in tandem to create a full stack version of project-1. This application uses react for the front end and Node.JS, Express, and PostgresSQL 
 
 
 ## CMP SCI 3130: Design and Analysis of Algorithms
@@ -53,4 +53,7 @@ These two projects work in tandem to create a full stack version of project-1. T
 This program is made to compare the efficiencies of three different polynomial evaluation algorithms: the brute force method, Horner's method (factorization), and the repeated squares method.
 It also has elements of file i/o.
 
+## CMP SCI 4280: Program Translation Project
 
+### project-p0
+The first project in a set of projects used to make a simple compiler. This one takes text input and organizes it into a basic binary tree.
