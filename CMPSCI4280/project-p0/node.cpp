@@ -1,5 +1,6 @@
 #include "node.h"
 
+// takes a pointer to a pointer so that the parent node can be modified in-place
 void addNode(node_t** parentPtr, int value, std::string key) {
     if (*parentPtr == nullptr) {
         (*parentPtr) = new node_t;
