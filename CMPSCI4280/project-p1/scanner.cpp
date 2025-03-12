@@ -20,24 +20,28 @@ int filter(FILE* inFile) {
 
     while ((nextChar = getc(inFile))) {
 
-        if (nextChar == '\n') {
+        if (insideComment) {
+            if (nextChar == '\n')
+                lineNum++;
+            if (nextChar == '*')
+                insideComment = false;
+            prevChar = nextChar;
+            continue;
+        }
+        if (nextChar == '*') {
+            insideComment = true;
+            prevChar = nextChar;
+            continue;
+        } else if (nextChar == '\n') {
             // let lineNum increment for consecutive newlines
-            if (prevChar == '\n') {
+            if (prevChar == '\n' || (prevChar == '*' && !insideComment)) {
                 lineNum++;
             }
             prevChar = nextChar;
             return 0;
-        } else if (nextChar == '*') {
-            insideComment = !insideComment;
-            prevChar = nextChar;
-            continue;
         } else if (nextChar == ' ') {
             prevChar = nextChar;
             return 0;
-        }
-        if (insideComment) {
-            prevChar = nextChar;
-            continue;
         }
         return getColumnNum(nextChar);
     }

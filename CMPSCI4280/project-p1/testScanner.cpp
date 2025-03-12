@@ -28,5 +28,5 @@ void testScanner(const char* fileName) {
         tk = FSADriver(inFile);
     }
 
-    printf("end of file token");
+    printf("end of file token\n");
 }
