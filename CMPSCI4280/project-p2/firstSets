@@ -1,0 +1,8 @@
+FIRST(G) = t2
+FIRST(F) = t2 | t3 | &
+FIRST(E) = `
+FIRST(D) = $
+FIRST(C) = # | !
+FIRST(A) = " | 0
+FIRST(S) = "0(
+FIRST(B) = "0( | #! | $ | ` | t2t3& | t2
