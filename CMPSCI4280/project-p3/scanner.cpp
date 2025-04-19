@@ -10,13 +10,28 @@ int fsaTable[6][6] = {{0, 5, 1, -1, 1004, 3},
                       {1002, 1002, 1002, 4, 1002, 1002},
                       {1001, 1001, 1001, 1001, 1001, 1001}};
 
-char nextChar;
-char prevChar;
+char nextChar = ' ';
+char prevChar = 0;
 int lineNum = 1;
 int newLineCount = 0;
+// Track previous state when moving between tokens
+int prevState = 0;
+
+/* start OR1 */
+bool newToken = false;
+char newTokenChar;
+/* end OR1 */
 
 int filter(FILE* inFile) {
     bool insideComment = false;
+
+    /* start OR1 */
+    if (newToken) {
+        newToken = false;
+        nextChar = newTokenChar;
+        return getColumnNum(nextChar);
+    }
+    /* end OR1 */
 
     while ((nextChar = getc(inFile))) {
 
@@ -51,38 +66,45 @@ int filter(FILE* inFile) {
 }
 
 Token FSADriver(FILE* inFile) {
+    int column = filter(inFile);
     int state = 0;
-    int nextState;
     std::string S = "";
+
+    int nextState;
     Token tk;
 
     while (state >= 0 && state <= 10) {
-        int column = filter(inFile);
         if (column == -1) {
-            tk = Token{TKN_ERR, &S, lineNum};
+            tk = Token{TKN_ERR, S, lineNum};
             break;
         }
 
         nextState = fsaTable[state][column];
 
         if (nextState < 0) {
-            tk = Token{TKN_ERR, &S, lineNum};
+            tk = Token{TKN_ERR, S, lineNum};
             break;
         } else if (nextState > 1000) {
+
+            // Increment lineNum after adding token if new line
+            if (nextChar == '\n')
+                tk = Token{intToToken(nextState), S, lineNum++};
+            else
+                tk = Token{intToToken(nextState), S, lineNum};
+            /* start OR1 */
+            if (nextChar != ' ' && nextChar != '\n') {
+                newToken = true;
+                newTokenChar = nextChar;
+            }
+            /* end OR1 */
+            break;
+        } else {
             // Don't add ending new line character
             if (nextChar != ' ' && nextChar != '\n')
                 S.push_back(nextChar);
-            // Increment lineNum after adding token if new line
-            if (nextChar == '\n')
-                tk = Token{intToToken(nextState), &S, lineNum++};
-            else
-                tk = Token{intToToken(nextState), &S, lineNum};
-            break;
-        } else {
-            state = nextState;
-            if (nextChar != ' ' && nextChar != '\n')
-                S.push_back(nextChar);
         }
+        state = nextState;
+        column = filter(inFile);
     }
     return tk;
 }
