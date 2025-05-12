@@ -55,29 +55,29 @@ It also has elements of file i/o.
 ## CMP SCI 4280: Program Translation Project
 
 ### Language Definition
-Valid characters are ! # + $ & * ' " ( ), any uppercase or lowercase letters, and any digits
-t1 tokens are single characters, which can be ! # $ & ' "
-t2 tokens are + followed by any number of digits, ex: +134 +045 +23
-t3 tokens are an uppercase or lowercase letter followed by any number of digits, ex: j14 k149 K103 N482
-* are used to delimit comments
+Valid characters are ! # + $ & * ' " ( ), any uppercase or lowercase letters, and any digits  
+t1 tokens are single characters, which can be ! # $ & ' "  
+t2 tokens are + followed by any number of digits, ex: +134 +045 +23  
+t3 tokens are an uppercase or lowercase letter followed by any number of digits, ex: j14 k149 K103 N482  
+* are used to delimit comments  
 
 ### Language Grammar
-S -> A ( B B )
-A -> " t2 | empty
-B -> S | C | D | E | G
-C -> # t2 | ! F
-D -> $ F
-E -> ' F F F B
-F -> t2 | t3 | & F F
-G -> t2 % F
+S -> A ( B B )  
+A -> " t2 | empty  
+B -> S | C | D | E | G  
+C -> # t2 | ! F  
+D -> $ F  
+E -> ' F F F B  
+F -> t2 | t3 | & F F  
+G -> t2 % F  
 
 ### Grammar Semantics
-Identifiers: **t2** tokens are identifiers
-Numbers: **t3** tokens are integers
+Identifiers: **t2** tokens are identifiers  
+Numbers: **t3** tokens are integers  
 - Leading uppercase indicates positive integer
 - Leading lowercase indicates negative integer
 - Any number of leading zeros are allowed
-Reserved: **t1** tokens are reserved for operations
+Reserved: **t1** tokens are reserved for operations  
 - **!** negates the following argument. If the argument is a **t2**, the new value is stored back in memory.
 - **"** allocates memory for an identifier and sets its value to 0
 - **#** allocates memory for an identifier and gets its value from user input
@@ -87,26 +87,26 @@ Reserved: **t1** tokens are reserved for operations
 - **&** is *preorder* addition. For example, `& val1 val2` adds the values of `val1` and `val2`. Note that this **does not** overwrite any values on its own.
 
 ### UMSL's Assembly Code
-UMSL's assembly code usually stores values into the ACCumulator, and most operations are single argument.
-Arguments can be labels, integers, or variable names. Variables can only store integers
-**Instructions**  **Number of Args and Instruction Explainer**
-BR                  1 arg, jump to label `arg` 
-BRNEG               1 arg, jump to label `arg` if ACC < 0
-BRZNEG              1 arg, jump to label `arg` if ACC <= 0
-BRPOS               1 arg, jump to label `arg` if ACC > 0
-BRZPOS              1 arg, jump to label `arg` if ACC >= 0
-BRZERO              1 arg, jump to label `arg` if ACC == 0
-COPY                2 args, `arg1` = `arg2`
-ADD                 1 arg, ACC = ACC + `arg`
-SUB                 1 arg, ACC = ACC - `arg`
-DIV                 1 arg, ACC = floor(ACC / `arg`)
-MULT                1 arg, ACC = ACC * `arg`
-READ                1 arg, `arg1` = `input`
-WRITE               1 arg, `output` = `arg1`
-STOP                0 args, stops the program
-STORE               1 arg, `arg` = ACC
-LOAD                1 arg, ACC = `arg`
-NOOP                0 args, do nothing (only useful for writing labels without having instruction on same line)
+UMSL's assembly code usually stores values into the ACCumulator, and most operations are single argument.  
+Arguments can be labels, integers, or variable names. Variables can only store integers.  
+**Instructions**  **Number of Args and Instruction Explainer**  
+BR                  1 arg, jump to label `arg`  
+BRNEG               1 arg, jump to label `arg` if ACC < 0  
+BRZNEG              1 arg, jump to label `arg` if ACC <= 0  
+BRPOS               1 arg, jump to label `arg` if ACC > 0  
+BRZPOS              1 arg, jump to label `arg` if ACC >= 0  
+BRZERO              1 arg, jump to label `arg` if ACC == 0  
+COPY                2 args, `arg1` = `arg2`  
+ADD                 1 arg, ACC = ACC + `arg`  
+SUB                 1 arg, ACC = ACC - `arg`  
+DIV                 1 arg, ACC = floor(ACC / `arg`)  
+MULT                1 arg, ACC = ACC * `arg`  
+READ                1 arg, `arg1` = `input`  
+WRITE               1 arg, `output` = `arg1`  
+STOP                0 args, stops the program  
+STORE               1 arg, `arg` = ACC  
+LOAD                1 arg, ACC = `arg`  
+NOOP                0 args, do nothing (only useful for writing labels without having instruction on same line)  
 
 ### project-p0
 The first project in a set of projects used to make a simple compiler. This one takes text input and organizes it into a basic binary tree.
