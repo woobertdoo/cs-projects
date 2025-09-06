@@ -1,7 +1,13 @@
+#include <cstdlib>
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
-#include <unistd.h> // Access to Unix system calls
+#include <sys/ipc.h>
+#include <sys/shm.h>  // Access to shared memory functions
+#include <sys/wait.h> // Access to wait() for parent process
+#include <unistd.h>   // Access to Unix system calls
 
+const int shm_key = ftok("oss.cpp", 0);
+const int buff_sz = sizeof(int);
 typedef struct {
     int numProcess;
     int maxSimultaneous;
@@ -20,8 +26,6 @@ void printUsage(const char* app) {
                     "processes that can be running at a given time.\n");
     fprintf(stderr, "@param numIter: the number of iterations each child "
                     "process should run through.\n");
-    fprintf(stderr, "If a value is not given for any of -n,-s, or -t, the "
-                    "program will immediately exit.\n");
 }
 
 int main(int argc, char** argv) {
@@ -54,21 +58,54 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
     }
-
-    pid_t childPid = fork(); // Create child process to get replaced with ./user
-    if (childPid == 0) {
-        printf("I'm a copy of the parent. My process id is %d.\nMy parent's "
-               "process id is %d.\n",
-               getpid(), getppid());
-        char* args[] = {(char*)"./user", (char*)0};
-        execvp(args[0], args);
-
-        // Since the process gets replaced, this will only run if execvp fails
-        // for some reason
-        fprintf(stderr, "Error executing %s. Terminating.", args[0]);
+    // Create shared memory buffer to hold the total number of processes ran and
+    // current number of processes running
+    int shm_id = shmget(shm_key, buff_sz * 2, 0777 | IPC_CREAT);
+    if (shm_id <= 0) {
+        fprintf(stderr, "Error getting shared memory\n");
         return EXIT_FAILURE;
-    } else {
-        printf("I'm the parent! My process id is %d.\n", getpid());
+    }
+
+    int* shm_ptr = (int*)shmat(shm_id, 0, 0);
+    if (shm_ptr == nullptr) {
+        fprintf(stderr, "Error attaching to shared memory\n");
+        return EXIT_FAILURE;
+    }
+
+    int* totalProcessesRanPtr = shm_ptr;
+    int* numProcessesRunningPtr = shm_ptr + 1;
+
+    *totalProcessesRanPtr = 0;
+    *numProcessesRunningPtr = 0;
+
+    while (*totalProcessesRanPtr < options.numProcess) {
+        pid_t childPid =
+            fork(); // Create child process to get replaced with ./user
+        if (childPid == 0) {
+            *numProcessesRunningPtr += 1;
+            /* printf(
+                 "I'm a copy of the parent. My process id is %d.\nMy parent's "
+                 "process id is %d.\n", getpid(), getppid()); */
+            char numIterString[4];
+            sprintf(numIterString, "%d", options.numIter);
+            char* args[] = {(char*)"./user", numIterString, (char*)0};
+            execvp(args[0], args);
+
+            // Since the process gets replaced, this will only run if execvp
+            // fails for some reason
+            fprintf(stderr, "Error executing %s. Terminating.", args[0]);
+            return EXIT_FAILURE;
+        } else {
+
+            if (*numProcessesRunningPtr >= options.maxSimultaneous) {
+                wait(0);
+            }
+            printf("Number of processes running: %d\n",
+                   *numProcessesRunningPtr);
+            printf("Total processes ran so far: %d\n", *totalProcessesRanPtr);
+
+            // printf("I'm the parent! My process id is %d.\n", getpid());
+        }
     }
     return EXIT_SUCCESS;
 }
