@@ -58,34 +58,22 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
     }
-    // Create shared memory buffer to hold the total number of processes ran and
-    // current number of processes running
-    int shm_id = shmget(shm_key, buff_sz * 2, 0777 | IPC_CREAT);
-    if (shm_id <= 0) {
-        fprintf(stderr, "Error getting shared memory\n");
-        return EXIT_FAILURE;
-    }
 
-    int* shm_ptr = (int*)shmat(shm_id, 0, 0);
-    if (shm_ptr == nullptr) {
-        fprintf(stderr, "Error attaching to shared memory\n");
-        return EXIT_FAILURE;
-    }
+    int totalProcessRan = 0;
+    int numProcessesRunning = 0;
 
-    int* totalProcessesRanPtr = shm_ptr;
-    int* numProcessesRunningPtr = shm_ptr + 1;
-
-    *totalProcessesRanPtr = 0;
-    *numProcessesRunningPtr = 0;
-
-    while (*totalProcessesRanPtr < options.numProcess) {
+    while (totalProcessRan < options.numProcess) {
+        while (numProcessesRunning >= options.maxSimultaneous) {
+            wait(0);
+            numProcessesRunning -= 1;
+        }
         pid_t childPid =
             fork(); // Create child process to get replaced with ./user
         if (childPid == 0) {
-            *numProcessesRunningPtr += 1;
             /* printf(
                  "I'm a copy of the parent. My process id is %d.\nMy parent's "
                  "process id is %d.\n", getpid(), getppid()); */
+            // Need to convert the int into a cstring to pass as commandline arg
             char numIterString[4];
             sprintf(numIterString, "%d", options.numIter);
             char* args[] = {(char*)"./user", numIterString, (char*)0};
@@ -96,16 +84,25 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Error executing %s. Terminating.", args[0]);
             return EXIT_FAILURE;
         } else {
-
-            if (*numProcessesRunningPtr >= options.maxSimultaneous) {
-                wait(0);
-            }
-            printf("Number of processes running: %d\n",
-                   *numProcessesRunningPtr);
-            printf("Total processes ran so far: %d\n", *totalProcessesRanPtr);
+            totalProcessRan += 1;
+            numProcessesRunning += 1;
+            printf("Number of processes running: %d\n", numProcessesRunning);
+            printf("Total processes ran so far: %d\n", totalProcessRan);
 
             // printf("I'm the parent! My process id is %d.\n", getpid());
+
+            int status;
+            int childFinished = 0;
+            while ((childFinished = waitpid(-1, &status, WNOHANG)) > 0) {
+                numProcessesRunning -= 1;
+            }
         }
+    }
+
+    // Wait for the rest of the children to finish
+    while (numProcessesRunning > 0) {
+        wait(0);
+        numProcessesRunning -= 1;
     }
     return EXIT_SUCCESS;
 }
