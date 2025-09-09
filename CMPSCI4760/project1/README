@@ -1,0 +1,9 @@
+Name: Jamie Harris
+Date: 08/30/2025
+Environment: Arch Linux with Neovim
+How to compile the project:
+Type ’make’
+Example of how to run the project:
+./oss -n 3 -s 2 -t 2
+
+Note: If any of -n, -s, -t are not given, the default value is 0. This will cause the program to terminate immediately

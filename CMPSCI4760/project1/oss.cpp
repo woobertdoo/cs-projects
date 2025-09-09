@@ -70,9 +70,6 @@ int main(int argc, char** argv) {
         pid_t childPid =
             fork(); // Create child process to get replaced with ./user
         if (childPid == 0) {
-            /* printf(
-                 "I'm a copy of the parent. My process id is %d.\nMy parent's "
-                 "process id is %d.\n", getpid(), getppid()); */
             // Need to convert the int into a cstring to pass as commandline arg
             char numIterString[4];
             sprintf(numIterString, "%d", options.numIter);
@@ -86,8 +83,10 @@ int main(int argc, char** argv) {
         } else {
             totalProcessRan += 1;
             numProcessesRunning += 1;
-            printf("Number of processes running: %d\n", numProcessesRunning);
-            printf("Total processes ran so far: %d\n", totalProcessRan);
+            //            printf("Number of processes running: %d\n",
+            //            numProcessesRunning);
+            //          printf("Total processes ran so far: %d\n",
+            //          totalProcessRan);
 
             // printf("I'm the parent! My process id is %d.\n", getpid());
 
