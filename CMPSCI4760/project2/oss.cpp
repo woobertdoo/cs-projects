@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdlib>
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
@@ -8,6 +9,8 @@
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
+const int NANO_INCR = 500000;
+const int BILLION = pow(10, 9);
 
 typedef struct {
     int numProcess;
@@ -55,6 +58,31 @@ bool isProcessTableEmpty() {
 void initiateProcessTable() {
     for (int i = 0; i < options.maxSimultaneous; i++) {
         processTable[i].occupied = false;
+        processTable[i].pid = 0;
+        processTable[i].startNano = 0;
+        processTable[i].startSeconds = 0;
+    }
+}
+
+void incrementClock(int* currentSec, int* currentNano) {
+    *currentNano += NANO_INCR;
+    if (*currentNano > BILLION) {
+        *currentNano -= BILLION;
+        *currentSec += 1;
+    }
+}
+
+void printProcessTable(int currentSec, int currentNano) {
+    printf("OSS PID:%d SysClockS:%d SysClockNano:%d\n", getpid(), currentSec,
+           currentNano);
+    printf("Process Tabe:\n");
+    printf("Entry Occupied PID StartS StartN\n");
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        const char* occupiedStatus =
+            processTable[i].occupied ? "True" : "False";
+        printf("%d   %s       %d   %d    %d\n", i, occupiedStatus,
+               processTable[i].pid, processTable[i].startSeconds,
+               processTable[i].startNano);
     }
 }
 
@@ -120,7 +148,22 @@ int main(int argc, char** argv) {
     initiateProcessTable();
     int totalProcessesRan = 0;
 
+    int lastNano = *nano;
+    int lastSec = *sec;
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
+        incrementClock(sec, nano);
+
+        // Two cases: lastNano + 500,000,000 nanosecs <= currentNano
+        // OR:
+        // currentSec = lastSec + 1 AND currentNano >= lastNano -
+        // 500,000,000
+        // LastSec: 0 LastNano: 999,999,999
+        // CurrSec: 1 LastNano: 499,999,999
+
+        if (lastNano + BILLION / 2 <= *nano ||
+            (*sec = lastSec + 1 && *nano >= lastNano - BILLION / 2)) {
+            printProcessTable(*sec, *nano);
+        }
     }
 
     return EXIT_SUCCESS;
