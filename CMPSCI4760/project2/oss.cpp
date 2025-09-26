@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    int shm_id = shmget(SHM_KEY, BUFF_SZ, 0700 | IPC_CREAT);
+    int shm_id = shmget(SHM_KEY, BUFF_SZ, 0777 | IPC_CREAT);
     if (shm_id <= 0) {
         fprintf(stderr, "Parent: Error initializing shared memory id\n");
         return EXIT_FAILURE;
@@ -165,6 +165,11 @@ int main(int argc, char** argv) {
             printProcessTable(*sec, *nano);
         }
     }
+
+    /* Clean Up Shared Memory */
+
+    shmdt(clock);
+    shmctl(shm_id, IPC_RMID, NULL);
 
     return EXIT_SUCCESS;
 }
