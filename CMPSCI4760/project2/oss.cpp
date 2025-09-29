@@ -266,10 +266,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    int totalSecs = totalProcessesRan * std::floor(options.childLifetimeSec);
+    long long totalNano =
+        totalProcessesRan * options.childLifetimeSec * BILLION;
+    int finalNano = totalNano % BILLION;
+    int totalSecs = (totalNano - finalNano) / BILLION;
     printf("OSS PID: %d Terminating\n", getpid());
     printf("%d workers were launched and terminated\n", totalProcessesRan);
-    printf("");
+    printf("Workers ran for a combined time of %d seconds %d nanoseconds\n",
+           totalSecs, finalNano);
 
     /* Clean Up Shared Memory */
 
