@@ -1,4 +1,4 @@
-CC	= g++ -g3 --std=17
+CC	= g++ -g3 --std=c++17
 CFLAGS  = -g3
 TARGET1 = worker
 TARGET2 = oss 

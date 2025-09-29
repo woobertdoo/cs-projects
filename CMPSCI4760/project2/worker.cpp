@@ -87,6 +87,6 @@ int main(int argc, char** argv) {
            "%d\n",
            *sec, *nano, endSec, endNano);
     printf("-- Terminating --\n");
-
+    shmdt(clock);
     return EXIT_SUCCESS;
 }
