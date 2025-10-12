@@ -122,3 +122,8 @@ A static sematics symbol table generator, to make sure that any variables that a
 
 ### project-p4
 The capstone compiler. This program takes everything made so far, and compiles the high-level language into UMSL's assembly code. 
+
+## CMP SCI 4760: Operating Systems
+
+### project1
+This is a basic process forking program that takes in a few commandline arguments, see README.md in `CMPSCI4760/project1`
