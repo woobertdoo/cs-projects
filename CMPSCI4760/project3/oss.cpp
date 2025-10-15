@@ -190,11 +190,11 @@ int main(int argc, char** argv) {
         case 's':
             options.maxSimultaneous = atoi(optarg);
             break;
-        a case 't':
-            options.childLifetimeSec = atoi(optarg);
+        case 't':
+            options.childLifetimeSec = atof(optarg);
             break;
         case 'i':
-            options.childIntervalSec = atoi(optarg);
+            options.childIntervalSec = atof(optarg);
             break;
         case 'f':
             strcpy(options.logFile, optarg);
@@ -207,6 +207,14 @@ int main(int argc, char** argv) {
     }
 
     printSysStart();
+
+    FILE* log_file;
+    log_file = fopen(options.logFile, "w");
+
+    if (log_file == NULL) {
+        fprintf(stderr, "Error: Could not write to log file!\n");
+        return EXIT_FAILURE;
+    }
 
     /* Setting up message queue */
     msgbuffer buffers[options.maxSimultaneous];
@@ -254,6 +262,8 @@ int main(int argc, char** argv) {
     int lastNano = *nano;
     int lastSec = *sec;
     int nextChildIndex = -1;
+    int messagesSent = 0;
+
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
 
         if (numProcessesRunning > 0) {
@@ -265,33 +275,57 @@ int main(int argc, char** argv) {
             }
         }
 
-        pid_t nextChildPID = processTable[nextChildIndex].pid;
+        if (nextChildIndex >= 0) {
 
-        printf("Sending message to child %d\n", nextChildPID);
+            pid_t nextChildPID = processTable[nextChildIndex].pid;
 
-        buffers[nextChildIndex].mtype = nextChildPID;
-        buffers[nextChildIndex].intData = nextChildPID;
+            buffers[nextChildIndex].mtype = nextChildPID;
+            buffers[nextChildIndex].intData = nextChildPID;
 
-        if (msgsnd(msqid, &buffers[nextChildIndex],
-                   sizeof(msgbuffer) - sizeof(long), 0) == -1) {
-            fprintf(stderr, "msgsnd to child with process id %d failed\n",
-                    nextChildPID);
-            return EXIT_FAILURE;
-        }
+            fprintf(log_file,
+                    "OSS: Sending message to worker %d PID %d at time %d:%d\n",
+                    nextChildIndex, nextChildPID, *sec, *nano);
+            printf("OSS: Sending message to worker %d PID %d at time %d:%d\n",
+                   nextChildIndex, nextChildPID, *sec, *nano);
 
-        msgbuffer rcvbuf;
+            if (msgsnd(msqid, &buffers[nextChildIndex],
+                       sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+                fprintf(stderr, "msgsnd to child with process id %d failed\n",
+                        nextChildPID);
+                return EXIT_FAILURE;
+            }
+            messagesSent++;
 
-        if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) == -1) {
-            fprintf(stderr, "failed to receive message in parent\n");
-            return EXIT_FAILURE;
-        }
+            msgbuffer rcvbuf;
 
-        printf("OSS received message from child %d\n", nextChildPID);
+            if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) == -1) {
+                fprintf(stderr, "failed to receive message in parent\n");
+                return EXIT_FAILURE;
+            }
 
-        if (rcvbuf.intData == 0) {
-            printf("OSS: Child %d has decided to terminate\n", nextChildPID);
-            wait(0);
-            rmProcess(nextChildPID);
+            fprintf(
+                log_file,
+                "OSS: Received message from worker %d PID %d at time %d:%d\n",
+                nextChildIndex, nextChildPID, *sec, *nano);
+            printf(
+                "OSS: Received message from worker %d PID %d at time %d:%d\n",
+                nextChildIndex, nextChildPID, *sec, *nano);
+
+            processTable[nextChildIndex].messagesSent += 1;
+
+            if (rcvbuf.intData == 0) {
+                fprintf(log_file,
+                        "OSS: Worker %d PID %d has decided to terminate\n",
+                        nextChildIndex, nextChildPID);
+                printf("OSS: Worker %d PID %d has decided to terminate\n",
+                       nextChildIndex, nextChildPID);
+                wait(0);
+                numProcessesRunning--;
+                rmProcess(nextChildPID);
+
+                if (totalProcessesRan >= options.numProcess)
+                    break;
+            }
         }
 
         long lastTime = lastSec * BILLION + lastNano;
@@ -303,9 +337,11 @@ int main(int argc, char** argv) {
             printProcessTable(*sec, *nano);
         }
 
+        if (numProcessesRunning >= options.maxSimultaneous)
+            continue;
+
         pid_t new_pid = fork();
         if (new_pid == 0) {
-            addTableEntry(getpid());
             printProcessTable(*sec, *nano);
             int lifetimeSeconds = std::floor(options.childLifetimeSec);
             int lifetimeNanoSeconds =
@@ -326,18 +362,10 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Error executing %s. Terminating.", args[0]);
             return EXIT_FAILURE;
         } else {
+            printf("New PID: %d\n", new_pid);
+            addTableEntry(new_pid);
             totalProcessesRan += 1;
             numProcessesRunning += 1;
-        }
-    }
-
-    while (numProcessesRunning > 0) {
-        incrementClock(sec, nano, numProcessesRunning);
-        int status;
-        int pid = waitpid(-1, &status, WNOHANG);
-        if (pid > 0) {
-            rmProcess(pid);
-            numProcessesRunning -= 1;
         }
     }
 
@@ -347,8 +375,7 @@ int main(int argc, char** argv) {
     int totalSecs = (totalNano - finalNano) / BILLION;
     printf("OSS PID: %d Terminating\n", getpid());
     printf("%d workers were launched and terminated\n", totalProcessesRan);
-    printf("Workers ran for a combined time of %d seconds %d nanoseconds\n",
-           totalSecs, finalNano);
+    printf("OSS sent a total of %d messages\n", messagesSent);
 
     /* Clean Up Shared Memory */
 
