@@ -27,7 +27,6 @@ typedef struct {
 
 typedef struct {
     long mtype;
-    char strData[100];
     int intData;
 } msgbuffer;
 
@@ -74,6 +73,7 @@ void initiateProcessTable() {
         processTable[i].pid = 0;
         processTable[i].startNano = 0;
         processTable[i].startSeconds = 0;
+        processTable[i].messagesSent = 0;
     }
 }
 
@@ -84,6 +84,7 @@ void addTableEntry(int pid) {
             processTable[i].pid = pid;
             processTable[i].startSeconds = clock[0];
             processTable[i].startNano = clock[1];
+            processTable[i].messagesSent = 0;
             return;
         }
     }
@@ -148,6 +149,7 @@ void rmProcess(int pid) {
             processTable[i].startNano = 0;
             processTable[i].startSeconds = 0;
             processTable[i].occupied = false;
+            processTable[i].messagesSent = 0;
         }
     }
 }
@@ -188,7 +190,7 @@ int main(int argc, char** argv) {
         case 's':
             options.maxSimultaneous = atoi(optarg);
             break;
-        case 't':
+        a case 't':
             options.childLifetimeSec = atoi(optarg);
             break;
         case 'i':
@@ -254,13 +256,46 @@ int main(int argc, char** argv) {
     int nextChildIndex = -1;
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
 
-        if (numProcessesRunning > 0)
+        if (numProcessesRunning > 0) {
             incrementClock(sec, nano, numProcessesRunning);
+            nextChildIndex = (nextChildIndex + 1) % numProcessesRunning;
+            // keep incrementing index until a running process is encountered
+            while (!processTable[nextChildIndex].occupied) {
+                nextChildIndex = (nextChildIndex + 1) % numProcessesRunning;
+            }
+        }
+
+        pid_t nextChildPID = processTable[nextChildIndex].pid;
+
+        printf("Sending message to child %d\n", nextChildPID);
+
+        buffers[nextChildIndex].mtype = nextChildPID;
+        buffers[nextChildIndex].intData = nextChildPID;
+
+        if (msgsnd(msqid, &buffers[nextChildIndex],
+                   sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+            fprintf(stderr, "msgsnd to child with process id %d failed\n",
+                    nextChildPID);
+            return EXIT_FAILURE;
+        }
+
+        msgbuffer rcvbuf;
+
+        if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) == -1) {
+            fprintf(stderr, "failed to receive message in parent\n");
+            return EXIT_FAILURE;
+        }
+
+        printf("OSS received message from child %d\n", nextChildPID);
+
+        if (rcvbuf.intData == 0) {
+            printf("OSS: Child %d has decided to terminate\n", nextChildPID);
+            wait(0);
+            rmProcess(nextChildPID);
+        }
 
         long lastTime = lastSec * BILLION + lastNano;
         long now = *sec * BILLION + *nano;
-
-        nextChildIndex = (nextChildIndex + 1) % numProcessesRunning;
 
         if (now - lastTime >= BILLION / 2) {
             lastSec = *sec;
@@ -268,20 +303,10 @@ int main(int argc, char** argv) {
             printProcessTable(*sec, *nano);
         }
 
-        int status;
-        int pid = waitpid(-1, &status, WNOHANG);
-
-        if (numProcessesRunning >= options.maxSimultaneous) {
-            if (pid > 0) {
-                rmProcess(pid);
-                numProcessesRunning -= 1;
-            } else {
-                continue;
-            }
-        }
         pid_t new_pid = fork();
         if (new_pid == 0) {
             addTableEntry(getpid());
+            printProcessTable(*sec, *nano);
             int lifetimeSeconds = std::floor(options.childLifetimeSec);
             int lifetimeNanoSeconds =
                 float(options.childLifetimeSec - lifetimeSeconds) * BILLION;
@@ -293,6 +318,7 @@ int main(int argc, char** argv) {
 
             char* args[] = {(char*)"./worker", lifetimeSecStr, lifetimeNanoStr,
                             (char*)0};
+
             execvp(args[0], args);
 
             // Since the process gets replaced, this will only run if execvp
