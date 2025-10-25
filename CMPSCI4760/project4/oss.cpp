@@ -14,13 +14,14 @@ const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int NANO_INCR = 10000;
 const int BILLION = 1000000000;
+const int SCHEDULE_QUANTUM_NS = 10000;
 int shm_id;
 int* clock;
 
 typedef struct {
     int numProcess;
     int maxSimultaneous;
-    float childLifetimeSec;
+    float childTimeLimitSec;
     float childIntervalSec;
     char logFile[100];
 } options_t;
@@ -33,9 +34,15 @@ typedef struct {
 typedef struct {
     bool occupied;
     pid_t pid;
-    int startSeconds;
-    int startNano;
-    int messagesSent;
+    int startSeconds;       // Time process was created
+    int startNano;          // Time process was created
+    int serviceTimeSeconds; // Total time process has been scheduled
+    int serviceTimeNano;    // Total time process has been scheduled
+    int usedTimeSeconds;
+    int usedTimeNano;
+    int eventWaitSec;  // When process will run next
+    int eventWaitNano; // When process will run next
+    bool blocked;
 } PCB_t;
 
 // Global Variables
@@ -45,14 +52,14 @@ PCB_t* processTable;
 void printUsage(const char* app) {
     fprintf(stderr,
             "Usage: %s [-h] [-n numProcess] [-s maxSimultaneous] "
-            "[-t childLifetimeSec] [-i childIntervalSec]\n",
+            "[-t childTimeLimitSec] [-i childIntervalSec]\n",
             app);
     fprintf(stderr, "IMPORTANT: -h SUPERCEDES ALL OTHER OPTIONS!\n");
     fprintf(stderr,
             "@param numProcess: the total number of child processes to run.\n");
     fprintf(stderr, "@param maxSimultaneous: the maximum amount of child "
                     "processes that can be running at a given time.\n");
-    fprintf(stderr, "@param childLifetimeSec: the amount of simulated time "
+    fprintf(stderr, "@param childTimeLimitSec: the amount of simulated time "
                     "each child should run for"
                     "\n");
     fprintf(stderr, "@param childIntevalSec: the minimum amount of simulated "
@@ -73,7 +80,11 @@ void initiateProcessTable() {
         processTable[i].pid = 0;
         processTable[i].startNano = 0;
         processTable[i].startSeconds = 0;
-        processTable[i].messagesSent = 0;
+        processTable[i].serviceTimeNano = 0;
+        processTable[i].serviceTimeSeconds = 0;
+        processTable[i].eventWaitNano = 0;
+        processTable[i].eventWaitSec = 0;
+        processTable[i].blocked = 0;
     }
 }
 
@@ -84,7 +95,7 @@ void addTableEntry(int pid) {
             processTable[i].pid = pid;
             processTable[i].startSeconds = clock[0];
             processTable[i].startNano = clock[1];
-            processTable[i].messagesSent = 0;
+            processTable[i].blocked = 0;
             return;
         }
     }
@@ -127,6 +138,30 @@ void freeAndExit(int sig) {
     exit(1);
 }
 
+pid_t getNextProcessToSchedule(int* clock[]) {
+    float minRatio = MAXFLOAT;
+    int nextPIDIndex = -1;
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        // Don't try to schedule blocked processes
+        // or empty entries in process table
+        if (processTable[i].blocked || !processTable[i].occupied)
+            continue;
+        float totalServiceTime = processTable[i].serviceTimeSeconds * BILLION +
+                                 processTable[i].serviceTimeNano;
+        float totalUsedTime = processTable[i].usedTimeSeconds * BILLION +
+                              processTable[i].usedTimeNano;
+        float processTimeRatio;
+
+        if (totalServiceTime == 0) {
+            processTimeRatio = 0;
+        } else {
+            processTimeRatio = totalUsedTime / totalServiceTime;
+        }
+    }
+
+    return processTable[nextPIDIndex].pid;
+}
+
 void printProcessTable(int currentSec, int currentNano) {
     printf("OSS PID:%d SysclockS:%d SysclockNano:%d\n", getpid(), currentSec,
            currentNano);
@@ -149,7 +184,7 @@ void rmProcess(int pid) {
             processTable[i].startNano = 0;
             processTable[i].startSeconds = 0;
             processTable[i].occupied = false;
-            processTable[i].messagesSent = 0;
+            processTable[i].blocked = 0;
         }
     }
 }
@@ -158,7 +193,7 @@ void printSysStart() {
     printf("OSS starting, PID: %d PPID: %d\n", getpid(), getppid());
     printf("Called with\n");
     printf("-n %d\n-s %d\n-t %f\n-i %f\n", options.numProcess,
-           options.maxSimultaneous, options.childLifetimeSec,
+           options.maxSimultaneous, options.childTimeLimitSec,
            options.childIntervalSec);
 }
 
@@ -173,7 +208,7 @@ int main(int argc, char** argv) {
     // Default behavior will immediately exit the process
     options.numProcess = 0;
     options.maxSimultaneous = 0;
-    options.childLifetimeSec = 0;
+    options.childTimeLimitSec = 0;
     options.childIntervalSec = 1;
 
     /* Parsing options */
@@ -191,7 +226,7 @@ int main(int argc, char** argv) {
             options.maxSimultaneous = atoi(optarg);
             break;
         case 't':
-            options.childLifetimeSec = atof(optarg);
+            options.childTimeLimitSec = atof(optarg);
             break;
         case 'i':
             options.childIntervalSec = atof(optarg);
@@ -343,9 +378,9 @@ int main(int argc, char** argv) {
         pid_t new_pid = fork();
         if (new_pid == 0) {
             printProcessTable(*sec, *nano);
-            int lifetimeSeconds = std::floor(options.childLifetimeSec);
+            int lifetimeSeconds = std::floor(options.childTimeLimitSec);
             int lifetimeNanoSeconds =
-                float(options.childLifetimeSec - lifetimeSeconds) * BILLION;
+                float(options.childTimeLimitSec - lifetimeSeconds) * BILLION;
 
             char lifetimeSecStr[4];
             char lifetimeNanoStr[9];
@@ -370,7 +405,7 @@ int main(int argc, char** argv) {
     }
 
     long long totalNano =
-        totalProcessesRan * options.childLifetimeSec * BILLION;
+        totalProcessesRan * options.childTimeLimitSec * BILLION;
     int finalNano = totalNano % BILLION;
     int totalSecs = (totalNano - finalNano) / BILLION;
     printf("OSS PID: %d Terminating\n", getpid());
