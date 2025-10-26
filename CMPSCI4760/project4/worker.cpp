@@ -8,6 +8,7 @@
 
 typedef struct {
     long mtype;
+    pid_t sender;
     int intData;
 } msgbuffer;
 
@@ -22,13 +23,19 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    int intervalSec = atoi(argv[1]);
-    int intervalNano = atoi(argv[2]);
+    int upperLimitSec = atoi(argv[1]);
+    int upperLimitNano = upperLimitSec * BILLION + atoi(argv[2]);
+
+    // Generate random number of nanoseconds to use, rounding down to the
+    // nearest 1000
+    int usedNano = std::floor(rand() / 1000) * 1000;
+    int usedSec = std::floor(usedNano / BILLION);
+    usedNano -= usedSec * BILLION;
 
     // Print Initialize Statement
     printf("Worker starting, PID:%d, PPID:%d\n", getpid(), getppid());
     printf("Called with:\n");
-    printf("Interval: %d seconds, %d nanoseconds\n", intervalSec, intervalNano);
+    printf("Interval: %d seconds, %d nanoseconds\n", usedSec, usedNano);
 
     msgbuffer buf;
     buf.mtype = 1;
@@ -67,8 +74,8 @@ int main(int argc, char** argv) {
     int* nano = &(clock[1]);
 
     // Set end times for worker to watch out for
-    int endSec = *sec + intervalSec;
-    int endNano = *nano + intervalNano;
+    int endSec = *sec + usedSec;
+    int endNano = *nano + usedNano;
 
     // Loop around if the nanoseconds add up to more than 1 second
     if (endNano > BILLION) {
