@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <signal.h>
@@ -5,19 +6,22 @@
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
 #include <string.h>
+#include <string>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/shm.h>  // Access to shared memory functions
 #include <sys/wait.h> // Access to wait() for parent process
 #include <unistd.h>   // Access to Unix system calls
+#include <vector>
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int BILLION = 1000000000;
-const int SCHEDULE_QUANTUM_NS = 10000000;
+const int SCHEDULE_QUANTUM_NS = 50000000;
 const int SCHEDULE_DECISION_TIME_NS = 100000;
 const int CHANGE_QUEUE_TIME_NS = 500000;
-const int INTERRUPT_DELAY_NS = 600000000;
+const int BLOCK_DELAY_NS = 600000000;
+const int IDLE_TIME_NS = 200000000;
 int shm_id;
 int* clock;
 
@@ -42,10 +46,14 @@ typedef struct {
     int startNano;          // Time process was created
     int serviceTimeSeconds; // Total time process has been scheduled
     int serviceTimeNano;    // Total time process has been scheduled
-    int usedTimeSeconds;
-    int usedTimeNano;
-    int eventWaitSec;  // When process will run next
-    int eventWaitNano; // When process will run next
+    int usedTimeSeconds;    // How much time as been used
+    int usedTimeNano;       // How much time has been used
+    int eventWaitSec;       // When process will run next
+    int eventWaitNano;      // When process will run next
+    int whenBlockedSec;
+    int whenBlockedNano;
+    int runtimeNano; // Total time the process will run,
+    float queuePriority;
     bool blocked;
 } PCB_t;
 
@@ -103,21 +111,22 @@ void initiateProcessTable() {
         processTable[i].serviceTimeSeconds = 0;
         processTable[i].eventWaitNano = 0;
         processTable[i].eventWaitSec = 0;
+        processTable[i].whenBlockedSec = 0;
+        processTable[i].whenBlockedNano = 0;
+        processTable[i].queuePriority = 0;
         processTable[i].blocked = 0;
     }
 }
 
 void updateProcessUsedTime(int processIndex, int toAddNS) {
     processTable[processIndex].usedTimeNano += toAddNS;
-    if (processTable[processIndex].usedTimeNano >= BILLION) {
-        int fullSeconds =
-            std::floor(processTable[processIndex].usedTimeNano / BILLION);
-        processTable[processIndex].usedTimeNano -= fullSeconds * BILLION;
-        processTable[processIndex].usedTimeSeconds += fullSeconds;
+    while (processTable[processIndex].usedTimeNano >= BILLION) {
+        processTable[processIndex].usedTimeNano -= BILLION;
+        processTable[processIndex].usedTimeSeconds += 1;
     }
 }
 
-void addTableEntry(int pid) {
+void addTableEntry(int pid, int burstNano) {
     for (int i = 0; i < options.maxSimultaneous; i++) {
         if (!processTable[i].occupied) {
             processTable[i].occupied = true;
@@ -125,14 +134,15 @@ void addTableEntry(int pid) {
             processTable[i].startSeconds = clock[0];
             processTable[i].startNano = clock[1];
             processTable[i].blocked = 0;
-            return;
+            processTable[i].queuePriority = 0;
+            processTable[i].runtimeNano = burstNano;
         }
     }
 }
 
 void incrementClock(int* currentSec, int* currentNano, int incrNano) {
     *currentNano += incrNano;
-    if (*currentNano > BILLION) {
+    while (*currentNano > BILLION) {
         *currentNano -= BILLION;
         *currentSec += 1;
     }
@@ -166,7 +176,7 @@ void freeAndExit(int sig) {
     exit(1);
 }
 
-int getNextTableIndexToSchedule() {
+int getNextTableIndexToSchedule(std::vector<float>* priorityVector) {
     float minRatio = MAXFLOAT;
     int nextPIDIndex = -1;
     for (int i = 0; i < options.maxSimultaneous; i++) {
@@ -186,6 +196,8 @@ int getNextTableIndexToSchedule() {
             processTimeRatio = totalUsedTime / totalServiceTime;
         }
 
+        priorityVector->push_back(processTimeRatio);
+
         if (processTimeRatio < minRatio) {
             minRatio = processTimeRatio;
             nextPIDIndex = i;
@@ -196,13 +208,19 @@ int getNextTableIndexToSchedule() {
                                : nextPIDIndex;
         }
     }
+    // Sort priority ratios from least to greatest
+    if (priorityVector->size() > 0) {
+        std::sort(priorityVector->begin(), priorityVector->end(),
+                  [](float a, float b) { return a < b; });
+    }
 
     return nextPIDIndex;
 }
 
-void checkBlockedProcesses(int* clock) {
+int checkBlockedProcesses(int* clock) {
     int sec = clock[0];
     int nano = clock[1];
+    int totalBlockedTime = 0;
     for (int i = 0; i < options.maxSimultaneous; i++) {
         if (!processTable[i].blocked)
             continue;
@@ -210,18 +228,48 @@ void checkBlockedProcesses(int* clock) {
         if (sec >= processTable[i].eventWaitSec ||
             (sec == processTable[i].eventWaitSec &&
              nano >= processTable[i].eventWaitNano)) {
+
+            totalBlockedTime += (sec * BILLION + nano) -
+                                (processTable[i].whenBlockedSec * BILLION +
+                                 processTable[i].whenBlockedNano);
             processTable[i].blocked = false;
             incrementClock(&(clock[0]), &(clock[1]), CHANGE_QUEUE_TIME_NS);
         }
     }
+    return totalBlockedTime;
+}
+
+int getNumReadyProcesses() {
+    int count = 0;
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (!processTable[i].blocked && processTable[i].occupied)
+            count++;
+    }
+
+    return count;
 }
 
 void printProcessTable(int currentSec, int currentNano) {
     printf("OSS PID:%d SysclockS:%d SysclockNano:%d\n", getpid(), currentSec,
            currentNano);
-    printf("Process Tabe:\n");
+    printf("Process Table:\n");
+    printf("Ready Queue:\n");
     printf("Entry Occupied PID StartS StartN\n");
     for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (processTable[i].blocked)
+            continue;
+        const char* occupiedStatus =
+            processTable[i].occupied ? "True" : "False";
+        printf("%d   %s       %d   %d    %d\n", i, occupiedStatus,
+               processTable[i].pid, processTable[i].startSeconds,
+               processTable[i].startNano);
+    }
+    printf("--------------\n");
+    printf("Blocked Queue:\n");
+    printf("Entry Occupied PID StartS StartN\n");
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (!processTable[i].blocked)
+            continue;
         const char* occupiedStatus =
             processTable[i].occupied ? "True" : "False";
         printf("%d   %s       %d   %d    %d\n", i, occupiedStatus,
@@ -249,6 +297,16 @@ int getProcessIndexByPID(int pid) {
             return i;
     }
     return -1;
+}
+void blockProcess(int pid, int curNano) {
+    int processIndex = getProcessIndexByPID(pid);
+    PCB_t* process = &(processTable[processIndex]);
+    process->blocked = true;
+    process->eventWaitNano = curNano + BLOCK_DELAY_NS;
+    if (process->eventWaitNano > BILLION) {
+        process->eventWaitNano -= BILLION;
+        process->eventWaitSec += 1;
+    }
 }
 
 void printSysStart() {
@@ -357,11 +415,84 @@ int main(int argc, char** argv) {
     int numProcessesRunning = 0;
 
     int lastNano = *nano;
+    int secLastChildLaunched = 0;
+    int nanoLastChildLaunched = 0;
     int lastSec = *sec;
     int messagesSent = 0;
     int nextChildIndex = -1;
+    int idleNano = 0;
+    int idleSec = 0;
+    int totalBlockedSec = 0;
+    int totalBlockedNano = 0;
+    std::vector<float> priorityVector;
 
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
+
+        int timeLastChildLaunch =
+            secLastChildLaunched * BILLION + nanoLastChildLaunched;
+        int curTime = *sec * BILLION + *nano;
+        if (numProcessesRunning < options.maxSimultaneous &&
+            timeLastChildLaunch >
+                curTime + options.childIntervalSec * BILLION) {
+            // Bursts will be no smaller than 1 millisecond
+            int burstMillis = rand() % int(options.childTimeLimitSec * 1000);
+            // Convert milli to nano
+            int burstNano = burstMillis * (BILLION / 1000);
+            pid_t new_pid = fork();
+            if (new_pid == 0) {
+                printProcessTable(*sec, *nano);
+
+                char processBurstStr[9];
+                sprintf(processBurstStr, "%d", burstNano);
+
+                char* args[] = {(char*)"./worker", processBurstStr, (char*)0};
+
+                execvp(args[0], args);
+
+                // Since the process gets replaced, this will only run if execvp
+                // fails for some reason
+                fprintf(stderr, "Error executing %s. Terminating.", args[0]);
+                return EXIT_FAILURE;
+            } else {
+                lfprintf(log_file,
+                         "OSS: Generating new process with PID %d and putting "
+                         "it in ready queue at time %d:%d\n",
+                         new_pid, *sec, *nano);
+                printf("OSS: Generating new process with PID %d and putting "
+                       "it in ready queue at time %d:%d\n",
+                       new_pid, *sec, *nano);
+                addTableEntry(new_pid, burstNano);
+                secLastChildLaunched = *sec;
+                nanoLastChildLaunched = *nano;
+                totalProcessesRan += 1;
+                numProcessesRunning += 1;
+            }
+        }
+
+        totalBlockedNano += checkBlockedProcesses(clock);
+        while (totalBlockedNano > BILLION) {
+            totalBlockedNano -= BILLION;
+            totalBlockedSec += 1;
+        }
+        if (getNumReadyProcesses() > 0) {
+            nextChildIndex = getNextTableIndexToSchedule(&priorityVector);
+            printf("Priority vector size: %ld", priorityVector.size());
+            std::string queueString = "[";
+            queueString.append(std::to_string(priorityVector[0]));
+            if (priorityVector.size() > 1) {
+                for (size_t i = 1; i < priorityVector.size(); i++) {
+                    queueString.append(", " +
+                                       std::to_string(priorityVector.at(i)));
+                }
+            }
+            queueString.append("]");
+            lfprintf(log_file, "OSS: Ready Queue Priorities: %s\n",
+                     queueString.c_str());
+            printf("OSS: Ready Queue Priorities: %s\n", queueString.c_str());
+            incrementClock(sec, nano, SCHEDULE_DECISION_TIME_NS);
+        } else {
+            nextChildIndex = -1;
+        }
 
         if (nextChildIndex >= 0) {
 
@@ -371,11 +502,13 @@ int main(int argc, char** argv) {
             buffers[nextChildIndex].intData = SCHEDULE_QUANTUM_NS;
             buffers[nextChildIndex].sender = getpid();
 
-            fprintf(log_file,
-                    "OSS: Sending message to worker %d PID %d at time %d:%d\n",
-                    nextChildIndex, nextChildPID, *sec, *nano);
-            printf("OSS: Sending message to worker %d PID %d at time %d:%d\n",
-                   nextChildIndex, nextChildPID, *sec, *nano);
+            lfprintf(log_file,
+                     "OSS: Dispatching process with PID %d priority %f from "
+                     "ready queue at time %d:%d\n",
+                     nextChildPID, priorityVector[0], *sec, *nano);
+            printf("OSS: Dispatching process with PID %d priority %f from "
+                   "ready queue at time %d:%d\n",
+                   nextChildPID, priorityVector[0], *sec, *nano);
 
             if (msgsnd(msqid, &buffers[nextChildIndex],
                        sizeof(msgbuffer) - sizeof(long), 0) == -1) {
@@ -397,6 +530,9 @@ int main(int argc, char** argv) {
                      "OSS: Recieving that process with PID %d ran for %d "
                      "nanoseconds",
                      rcvbuf.sender, msg);
+            printf("OSS: Recieving that process with PID %d ran for %d "
+                   "nanoseconds",
+                   rcvbuf.sender, msg);
 
             int rcvIndex = getProcessIndexByPID(rcvbuf.sender);
             if (rcvIndex == -1) {
@@ -406,32 +542,34 @@ int main(int argc, char** argv) {
             }
 
             if (msg == SCHEDULE_QUANTUM_NS) {
+                lfprintf(log_file, "OSS: Using its full quantum\n");
+                printf("OSS: Using its full quantum\n");
                 incrementClock(sec, nano, SCHEDULE_QUANTUM_NS);
-            }
-
-            fprintf(
-                log_file,
-                "OSS: Received message from worker %d PID %d at time %d:%d\n",
-                nextChildIndex, nextChildPID, *sec, *nano);
-            printf(
-                "OSS: Received message from worker %d PID %d at time %d:%d\n",
-                nextChildIndex, nextChildPID, *sec, *nano);
-
-            processTable[nextChildIndex];
-
-            if (rcvbuf.intData == 0) {
-                fprintf(log_file,
-                        "OSS: Worker %d PID %d has decided to terminate\n",
-                        nextChildIndex, nextChildPID);
-                printf("OSS: Worker %d PID %d has decided to terminate\n",
-                       nextChildIndex, nextChildPID);
-                wait(0);
                 numProcessesRunning--;
-                rmProcess(nextChildPID);
-
-                if (totalProcessesRan >= options.numProcess)
-                    break;
+            } else if (msg < 0) {
+                lfprintf(log_file,
+                         "OSS: Process %d was blocked and did not "
+                         "use its full quantum\n",
+                         rcvbuf.sender);
+                printf("OSS: Process %d was blocked and did not "
+                       "use its full quantum\n",
+                       rcvbuf.sender);
+                blockProcess(rcvbuf.sender, *nano);
+                incrementClock(sec, nano, -1 * msg);
+            } else if (msg > 0) {
+                lfprintf(log_file,
+                         "OSS: Process %d terminated and did not "
+                         "use its full quantum\n",
+                         rcvbuf.sender);
+                printf("OSS: Process %d terminated and did not "
+                       "use its full quantum\n",
+                       rcvbuf.sender);
+                incrementClock(sec, nano, msg);
+                rmProcess(rcvbuf.sender);
+                numProcessesRunning--;
             }
+        } else { // No processes to be run/scheduled
+            incrementClock(sec, nano, IDLE_TIME_NS);
         }
 
         long lastTime = lastSec * BILLION + lastNano;
@@ -442,46 +580,7 @@ int main(int argc, char** argv) {
             lastNano = *nano;
             printProcessTable(*sec, *nano);
         }
-
-        if (numProcessesRunning >= options.maxSimultaneous)
-            continue;
-
-        pid_t new_pid = fork();
-        if (new_pid == 0) {
-            printProcessTable(*sec, *nano);
-            int limitSeconds = std::floor(options.childTimeLimitSec);
-            int limitNanoSeconds =
-                float(options.childTimeLimitSec - limitSeconds) * BILLION;
-
-            char limitSecStr[4];
-            char limitNanoStr[9];
-            sprintf(limitSecStr, "%d", limitSeconds);
-            sprintf(limitNanoStr, "%d", limitNanoSeconds);
-
-            char* args[] = {(char*)"./worker", limitSecStr, limitNanoStr,
-                            (char*)0};
-
-            execvp(args[0], args);
-
-            // Since the process gets replaced, this will only run if execvp
-            // fails for some reason
-            fprintf(stderr, "Error executing %s. Terminating.", args[0]);
-            return EXIT_FAILURE;
-        } else {
-            printf("New PID: %d\n", new_pid);
-            addTableEntry(new_pid);
-            totalProcessesRan += 1;
-            numProcessesRunning += 1;
-        }
     }
-
-    long long totalNano =
-        totalProcessesRan * options.childTimeLimitSec * BILLION;
-    int finalNano = totalNano % BILLION;
-    int totalSecs = (totalNano - finalNano) / BILLION;
-    printf("OSS PID: %d Terminating\n", getpid());
-    printf("%d workers were launched and terminated\n", totalProcessesRan);
-    printf("OSS sent a total of %d messages\n", messagesSent);
 
     /* Clean Up Shared Memory */
 
