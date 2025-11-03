@@ -1,8 +1,8 @@
 Name: Jamie Harris
-Date: 10/8/2025
+Date: 10/24/2025
 Environment: Arch Linux with Neovim
 How to compile the project:
 Type ’make’
 Example of how to run the project:
-./oss -n 3 -s 2 -t 4 -i 0.6
+./oss -n 3 -s 2 -t 4 -i 0.6 -f log.txt
 

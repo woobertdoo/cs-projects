@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    int runtimeNano = atoi(argv[1]);
+    long runtimeNano = atoi(argv[1]);
 
     msgbuffer buf;
     buf.mtype = 1;
@@ -43,29 +43,32 @@ int main(int argc, char** argv) {
 
     /* Setting up shared memory */
     if (SHM_KEY <= 0) {
-        fprintf(stderr, "Parent: Error initializing shared memory key\n");
+        fprintf(stderr, "Child %d: Error initializing shared memory key\n",
+                getpid());
         return EXIT_FAILURE;
     }
 
     int shm_id = shmget(SHM_KEY, BUFF_SZ, 0777);
     if (shm_id <= 0) {
-        fprintf(stderr, "Parent: Error initializing shared memory id\n");
+        fprintf(stderr, "Child %d: Error initializing shared memory id\n",
+                getpid());
         return EXIT_FAILURE;
     }
 
     int* clock = (int*)shmat(shm_id, 0, 0);
     if (clock == nullptr) {
-        fprintf(stderr, "Parent: Error accessing shared memory\n");
+        fprintf(stderr, "Child %d: Error accessing shared memory\n", getpid());
         return EXIT_FAILURE;
     }
+    printf("Worker %d: SHM_KEY: %d\n", getpid(), SHM_KEY);
 
     int* sec = &(clock[0]);
     int* nano = &(clock[1]);
 
-    int timeRanNano = 0;
+    long timeRanNano = 0;
     int messagesReceived = 0;
     bool shouldTerm = false;
-    do {
+    while (!shouldTerm) {
         if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
             perror("Failed to receive message from parent\n");
             return EXIT_FAILURE;
@@ -81,14 +84,14 @@ int main(int argc, char** argv) {
         if (rand() % 100 <= BLOCK_RATE) {
             // Generate random number of nanoseconds to use, rounding down to
             // the nearest 1000
-            usedNano = rand() % buf.intData;
-            buf.intData = usedNano;
+            usedNano = (rand() % buf.intData) / 1000 * 1000;
+            buf.intData = -1 * usedNano;
         }
 
         // Check if process should terminate before it uses up its time
         if (timeRanNano + usedNano >= runtimeNano) {
             usedNano = runtimeNano - timeRanNano;
-            buf.intData = -1 * usedNano;
+            buf.intData = usedNano;
             shouldTerm = true;
         }
 
@@ -96,7 +99,9 @@ int main(int argc, char** argv) {
         if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
             fprintf(stderr, "Failed to send message to parent!\n");
         }
-    } while (!shouldTerm);
+    }
+
+    printf("Child %d exiting!\n", getpid());
 
     shmdt(clock);
     return EXIT_SUCCESS;
