@@ -1,7 +1,9 @@
 #include "resources.h"
+#include <cerrno>
 #include <cmath>
 #include <cstdlib>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
 #include <string.h>
@@ -10,11 +12,13 @@
 #include <sys/shm.h>  // Access to shared memory functions
 #include <sys/wait.h> // Access to wait() for parent process
 #include <unistd.h>   // Access to Unix system calls
+#include <vector>
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int NANO_INCR = 10000;
 const int BILLION = 1000000000;
+const int SYS_MAX_SIMUL_PROCS = 18;
 int shm_id;
 int* clock;
 
@@ -28,7 +32,11 @@ typedef struct {
 
 typedef struct {
     long mtype;
-    int intData;
+    pid_t sender;
+    int requestOrRelease; // 1 for request, 0 for release
+    int resourceClass;
+    int resourceAmount;
+    int status; // 1 when worker terminates
 } msgbuffer;
 
 typedef struct {
@@ -42,7 +50,22 @@ typedef struct {
 // Global Variables
 options_t options;
 PCB_t* processTable;
+std::vector<msgbuffer> outstandingRequests;
 
+int lfprintf(FILE* stream, const char* format, ...) {
+    static int lineCount = 0;
+    lineCount++;
+
+    if (lineCount > 10000)
+        return 1;
+
+    va_list args;
+    va_start(args, format);
+    vfprintf(stream, format, args);
+    va_end(args);
+
+    return 0;
+}
 void printUsage(const char* app) {
     fprintf(stderr,
             "Usage: %s [-h] [-n numProcess] [-s maxSimultaneous] "
@@ -97,6 +120,53 @@ void incrementClock(int* currentSec, int* currentNano,
     if (*currentNano > BILLION) {
         *currentNano -= BILLION;
         *currentSec += 1;
+    }
+}
+
+int processResourceMessage(msgbuffer* buf, FILE* logFile) {
+    if (buf->requestOrRelease == 1) {
+        int rClass = buf->resourceClass;
+        int rAmt = buf->resourceAmount;
+        lfprintf(logFile,
+                 "OSS: Detected Process %d requesting %d instances of R%d "
+                 "at time %d:%d\n",
+                 buf->sender, rAmt, rClass, clock[0], clock[1]);
+        printf("OSS: Detected Process %d requesting %d instances of R%d "
+               "at time %d:%d\n",
+               buf->sender, rAmt, rClass, clock[0], clock[1]);
+        if (resources[rClass].numAllocated + rAmt > MAX_PER_RESOURCE_CLASS) {
+            outstandingRequests.push_back(*buf);
+            lfprintf(logFile,
+                     "OSS: Not enough instances of R%d available, Process %d "
+                     "added to blocked queue at time %d:%d\n",
+                     rClass, buf->sender, clock[0], clock[1]);
+            printf("OSS: Not enough instances of R%d available, Process %d "
+                   "added to blocked queue at time %d:%d\n",
+                   rClass, buf->sender, clock[0], clock[1]);
+            return 1;
+        }
+        lfprintf(logFile,
+                 "OSS: Granting Process %d request %d instances of R%d at time "
+                 "%d:%d\n",
+                 buf->sender, rAmt, rClass, clock[0], clock[1]);
+        printf("OSS: Granting Process %d request %d instances of R%d at time "
+               "%d:%d\n",
+               buf->sender, rAmt, rClass, clock[0], clock[1]);
+        return 0;
+    } else if (buf->requestOrRelease == 0) {
+        int rClass = buf->resourceClass;
+        int rAmt = buf->resourceAmount;
+        resources[rClass].numAllocated -= rAmt;
+        lfprintf(
+            logFile,
+            "OSS: Acknowledge process %d releasing resources at time %d:%d\n",
+            buf->sender, clock[0], clock[1]);
+        lfprintf(logFile, "\t Resources released: R%d:%d\n", rClass, rAmt);
+        return 0;
+    } else {
+        fprintf(stderr, "OSS: Error: Invalid request code from %d\n",
+                buf->sender);
+        return -1;
     }
 }
 
@@ -299,33 +369,13 @@ int main(int argc, char** argv) {
 
             msgbuffer rcvbuf;
 
-            if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) == -1) {
-                fprintf(stderr, "failed to receive message in parent\n");
-                return EXIT_FAILURE;
-            }
-
-            fprintf(
-                log_file,
-                "OSS: Received message from worker %d PID %d at time %d:%d\n",
-                nextChildIndex, nextChildPID, *sec, *nano);
-            printf(
-                "OSS: Received message from worker %d PID %d at time %d:%d\n",
-                nextChildIndex, nextChildPID, *sec, *nano);
-
-            processTable[nextChildIndex].messagesSent += 1;
-
-            if (rcvbuf.intData == 0) {
-                fprintf(log_file,
-                        "OSS: Worker %d PID %d has decided to terminate\n",
-                        nextChildIndex, nextChildPID);
-                printf("OSS: Worker %d PID %d has decided to terminate\n",
-                       nextChildIndex, nextChildPID);
-                wait(0);
-                numProcessesRunning--;
-                rmProcess(nextChildPID);
-
-                if (totalProcessesRan >= options.numProcess)
-                    break;
+            if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(),
+                       IPC_NOWAIT) == -1) {
+                if (errno != ENOMSG) {
+                    fprintf(stderr, "failed to receive message in parent\n");
+                    return EXIT_FAILURE;
+                }
+            } else {
             }
         }
 
@@ -339,6 +389,9 @@ int main(int argc, char** argv) {
         }
 
         if (numProcessesRunning >= options.maxSimultaneous)
+            continue;
+
+        if (numProcessesRunning > SYS_MAX_SIMUL_PROCS)
             continue;
 
         pid_t new_pid = fork();

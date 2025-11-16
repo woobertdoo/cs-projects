@@ -9,12 +9,19 @@
 
 typedef struct {
     long mtype;
-    int intData;
+    int requestOrRelease; // 1 for request, 0 for release
+    int resourceClass;
+    int resourceAmount;
 } msgbuffer;
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int BILLION = pow(10, 9);
+
+/* Resource Codes */
+const int REQUEST_AVAILABLE = 0;
+const int ERR_RESOURCE_ORDERING = 1;
+const int ERR_RESOURCE_FULL = 2;
 
 // Primitive hashmap. Index refers to resource class ID, subindex returns how
 // many are currently allocated
@@ -27,20 +34,23 @@ void initResourceMatrix() {
 
 /*
  * Returns status code based on whether or not a new resource can be requested.
- * 0: Resource is valid to be requested.
- * 1: Resource can not be requested, as it would violate the ordering rule
- * 2: Resource can not be requested, as there are not enough in the system
+ * REQUEST_AVAILABLE: Resource is valid to be requested.
+ * ERR_RESOURCE_ORDERING: Resource can not be requested,
+ * as it would violate the ordering rule.
+ * ERR_RESOURCE_FULL: Resource can not be requested, as there are not enough in
+ * the system.
  * */
+
 int canRequestResource(int resourceClass) {
     if (resourceClass < 9) {
         for (int i = resourceClass + 1; i < NUM_RESOURCE_CLASSES; i++) {
-            if (resourcesAllocated[NUM_RESOURCE_CLASSES][0] > 0)
-                return 1;
+            if (resourcesAllocated[i][0] > 0)
+                return ERR_RESOURCE_ORDERING;
         }
     }
     if (resourcesAllocated[resourceClass][0] == MAX_PER_RESOURCE_CLASS)
-        return 2;
-    return 0;
+        return ERR_RESOURCE_FULL;
+    return REQUEST_AVAILABLE;
 }
 
 int main(int argc, char** argv) {
