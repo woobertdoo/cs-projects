@@ -7,6 +7,7 @@
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
 #include <string.h>
+#include <string>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/shm.h>  // Access to shared memory functions
@@ -21,6 +22,8 @@ const int BILLION = 1000000000;
 const int SYS_MAX_SIMUL_PROCS = 18;
 int shm_id;
 int* clock;
+int msqid;
+bool verbose = false;
 
 typedef struct {
     int numProcess;
@@ -34,8 +37,7 @@ typedef struct {
     long mtype;
     pid_t sender;
     int requestOrRelease; // 1 for request, 0 for release
-    int resourceClass;
-    int resourceAmount;
+    int resources[NUM_RESOURCE_CLASSES];
     int status; // 1 when worker terminates
 } msgbuffer;
 
@@ -44,7 +46,7 @@ typedef struct {
     pid_t pid;
     int startSeconds;
     int startNano;
-    int messagesSent;
+    int resourceAllocations[NUM_RESOURCE_CLASSES];
 } PCB_t;
 
 // Global Variables
@@ -66,10 +68,11 @@ int lfprintf(FILE* stream, const char* format, ...) {
 
     return 0;
 }
+
 void printUsage(const char* app) {
     fprintf(stderr,
             "Usage: %s [-h] [-n numProcess] [-s maxSimultaneous] "
-            "[-t childLifetimeSec] [-i childIntervalSec]\n",
+            "[-t childLifetimeSec] [-i childIntervalSec] [-v]\n",
             app);
     fprintf(stderr, "IMPORTANT: -h SUPERCEDES ALL OTHER OPTIONS!\n");
     fprintf(stderr,
@@ -97,7 +100,9 @@ void initiateProcessTable() {
         processTable[i].pid = 0;
         processTable[i].startNano = 0;
         processTable[i].startSeconds = 0;
-        processTable[i].messagesSent = 0;
+        for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
+            processTable[i].resourceAllocations[j] = 0;
+        }
     }
 }
 
@@ -108,80 +113,126 @@ void addTableEntry(int pid) {
             processTable[i].pid = pid;
             processTable[i].startSeconds = clock[0];
             processTable[i].startNano = clock[1];
-            processTable[i].messagesSent = 0;
             return;
         }
     }
 }
 
-void incrementClock(int* currentSec, int* currentNano,
-                    int numProcessesRunning) {
-    *currentNano += 250000000 / numProcessesRunning;
+void incrementClock(int* currentSec, int* currentNano) {
+    *currentNano += NANO_INCR;
     if (*currentNano > BILLION) {
         *currentNano -= BILLION;
         *currentSec += 1;
     }
 }
-
-int processResourceMessage(msgbuffer* buf, FILE* logFile) {
-    if (buf->requestOrRelease == 1) {
-        int rClass = buf->resourceClass;
-        int rAmt = buf->resourceAmount;
-        lfprintf(logFile,
-                 "OSS: Detected Process %d requesting %d instances of R%d "
-                 "at time %d:%d\n",
-                 buf->sender, rAmt, rClass, clock[0], clock[1]);
-        printf("OSS: Detected Process %d requesting %d instances of R%d "
-               "at time %d:%d\n",
-               buf->sender, rAmt, rClass, clock[0], clock[1]);
-        if (resources[rClass].numAllocated + rAmt > MAX_PER_RESOURCE_CLASS) {
-            outstandingRequests.push_back(*buf);
-            lfprintf(logFile,
-                     "OSS: Not enough instances of R%d available, Process %d "
-                     "added to blocked queue at time %d:%d\n",
-                     rClass, buf->sender, clock[0], clock[1]);
-            printf("OSS: Not enough instances of R%d available, Process %d "
-                   "added to blocked queue at time %d:%d\n",
-                   rClass, buf->sender, clock[0], clock[1]);
-            return 1;
+int getProcessIndex(pid_t pid) {
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (processTable[i].pid == pid) {
+            return i;
         }
-        lfprintf(logFile,
-                 "OSS: Granting Process %d request %d instances of R%d at time "
-                 "%d:%d\n",
-                 buf->sender, rAmt, rClass, clock[0], clock[1]);
-        printf("OSS: Granting Process %d request %d instances of R%d at time "
-               "%d:%d\n",
-               buf->sender, rAmt, rClass, clock[0], clock[1]);
-        return 0;
-    } else if (buf->requestOrRelease == 0) {
-        int rClass = buf->resourceClass;
-        int rAmt = buf->resourceAmount;
-        resources[rClass].numAllocated -= rAmt;
-        lfprintf(
-            logFile,
-            "OSS: Acknowledge process %d releasing resources at time %d:%d\n",
-            buf->sender, clock[0], clock[1]);
-        lfprintf(logFile, "\t Resources released: R%d:%d\n", rClass, rAmt);
-        return 0;
-    } else {
-        fprintf(stderr, "OSS: Error: Invalid request code from %d\n",
-                buf->sender);
-        return -1;
     }
+    return -1;
 }
 
-void handleTimeout(int sig) {
-    for (int i = 0; i < options.maxSimultaneous; i++) {
-        if (processTable[i].occupied) {
-            kill(processTable[i].pid, SIGTERM);
+// returns 0 if acceptable request, 1 if resources are clogged,
+// 2 if acceptable release, -1 if resource code is invalid
+int processResourceMessage(msgbuffer* buf, FILE* logFile,
+                           bool recheck = false) {
+    if (buf->requestOrRelease == 1) {
+        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
+            int rAmt = buf->resources[rClass];
+            if (rAmt == 0)
+                continue;
+            if (!recheck) {
+                lfprintf(
+                    logFile,
+                    "OSS: Detected Process %d requesting %d instances of R%d "
+                    "at time %d:%d\n",
+                    buf->sender, rAmt, rClass, clock[0], clock[1]);
+                printf(
+                    "OSS: Detected Process %d requesting %d instances of R%d "
+                    "at time %d:%d\n",
+                    buf->sender, rAmt, rClass, clock[0], clock[1]);
+            }
+            if (resources[rClass].numAllocated + rAmt >
+                MAX_PER_RESOURCE_CLASS) {
+                if (!recheck && verbose) {
+                    lfprintf(logFile,
+                             "OSS: Not enough instances of R%d available, "
+                             "Process %d "
+                             "added to blocked queue at time %d:%d\n",
+                             rClass, buf->sender, clock[0], clock[1]);
+                    printf("OSS: Not enough instances of R%d available, "
+                           "Process %d "
+                           "added to blocked queue at time %d:%d\n",
+                           rClass, buf->sender, clock[0], clock[1]);
+                }
+                return 1;
+            }
         }
+        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
+            int rAmt = buf->resources[rClass];
+            if (rAmt == 0)
+                continue;
+            resources[rClass].numAllocated += rAmt;
+            resources[rClass].numRequested += rAmt;
+
+            int workerIndex = getProcessIndex(buf->sender);
+            if (workerIndex == -1) {
+                fprintf(stderr, "Can't find process in PID table\n");
+                return -1;
+            }
+
+            processTable[workerIndex].resourceAllocations[rClass] += rAmt;
+            lfprintf(
+                logFile,
+                "OSS: Granting Process %d request %d instances of R%d at time "
+                "%d:%d\n",
+                buf->sender, rAmt, rClass, clock[0], clock[1]);
+            printf(
+                "OSS: Granting Process %d request %d instances of R%d at time "
+                "%d:%d\n",
+                buf->sender, rAmt, rClass, clock[0], clock[1]);
+        }
+        return 0;
+    } else if (buf->requestOrRelease == 0) {
+        std::string releaseStr = "\t Resources released:";
+        bool resourcesReleased = false;
+        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
+            int rAmt = buf->resources[rClass];
+            if (rAmt == 0)
+                continue;
+            resources[rClass].numAllocated -= rAmt;
+            int workerIndex = getProcessIndex(buf->sender);
+            if (workerIndex == -1) {
+                fprintf(stderr, "Can't find process in PID table\n");
+                return -1;
+            }
+
+            processTable[workerIndex].resourceAllocations[rClass] -= rAmt;
+            releaseStr.append(" R");
+            releaseStr.append(std::to_string(rClass));
+            releaseStr.append(":");
+            releaseStr.append(std::to_string(rAmt));
+            resourcesReleased = true;
+        }
+        if (resourcesReleased && verbose) {
+            lfprintf(logFile,
+                     "OSS: Acknowledge process %d releasing resources at time "
+                     "%d:%d\n",
+                     buf->sender, clock[0], clock[1]);
+            printf("OSS: Acknowledge process %d releasing resources at time "
+                   "%d:%d\n",
+                   buf->sender, clock[0], clock[1]);
+            lfprintf(logFile, "%s\n", releaseStr.c_str());
+            printf("%s\n", releaseStr.c_str());
+        }
+        return 2;
+    } else {
+        fprintf(stderr, "OSS: Error: Invalid request code %d from %d\n",
+                buf->requestOrRelease, buf->sender);
+        return -1;
     }
-
-    // Free shared memory
-    shmdt(clock);
-    shmctl(shm_id, IPC_RMID, NULL);
-
-    exit(1);
 }
 
 void freeAndExit(int sig) {
@@ -194,6 +245,10 @@ void freeAndExit(int sig) {
     // Free shared memory
     shmdt(clock);
     shmctl(shm_id, IPC_RMID, NULL);
+    if (msgctl(msqid, IPC_RMID, NULL) == -1) {
+        perror("Failed to remove shared memory/n");
+        exit(1);
+    }
 
     exit(1);
 }
@@ -201,7 +256,7 @@ void freeAndExit(int sig) {
 void printProcessTable(int currentSec, int currentNano) {
     printf("OSS PID:%d SysclockS:%d SysclockNano:%d\n", getpid(), currentSec,
            currentNano);
-    printf("Process Tabe:\n");
+    printf("Process Table:\n");
     printf("Entry Occupied PID StartS StartN\n");
     for (int i = 0; i < options.maxSimultaneous; i++) {
         const char* occupiedStatus =
@@ -209,6 +264,22 @@ void printProcessTable(int currentSec, int currentNano) {
         printf("%d   %s       %d   %d    %d\n", i, occupiedStatus,
                processTable[i].pid, processTable[i].startSeconds,
                processTable[i].startNano);
+    }
+}
+
+void printResourceTable() {
+    printf("\t       R0  R1  R2  R3  R4  R5  R6  R7  R8  R9\n");
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (processTable[i].pid == 0)
+            continue;
+        std::string resourceRow = "Worker ";
+        resourceRow.append(std::to_string(processTable[i].pid));
+        for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
+            resourceRow.append("   ");
+            resourceRow.append(
+                std::to_string(processTable[i].resourceAllocations[j]));
+        }
+        printf("%s\n", resourceRow.c_str());
     }
 }
 
@@ -220,7 +291,9 @@ void rmProcess(int pid) {
             processTable[i].startNano = 0;
             processTable[i].startSeconds = 0;
             processTable[i].occupied = false;
-            processTable[i].messagesSent = 0;
+            for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
+                processTable[i].resourceAllocations[j] = 0;
+            }
         }
     }
 }
@@ -236,9 +309,9 @@ void printSysStart() {
 int main(int argc, char** argv) {
 
     // Set up signal handler
-    signal(SIGALRM, handleTimeout);
+    signal(SIGALRM, freeAndExit);
     signal(SIGINT, freeAndExit);
-    alarm(60);
+    alarm(5);
 
     // Set Default Options
     // Default behavior will immediately exit the process
@@ -250,11 +323,14 @@ int main(int argc, char** argv) {
     /* Parsing options */
 
     char opt;
-    while ((opt = getopt(argc, argv, "hn:s:t:i:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvn:s:t:i:f:")) != -1) {
         switch (opt) {
         case 'h':
             printUsage(argv[0]);
             return EXIT_SUCCESS;
+        case 'v':
+            verbose = true;
+            break;
         case 'n':
             options.numProcess = atoi(optarg);
             break;
@@ -288,8 +364,6 @@ int main(int argc, char** argv) {
     }
 
     /* Setting up message queue */
-    msgbuffer buffers[options.maxSimultaneous];
-    int msqid;
     key_t key;
     system("touch msgq.txt");
 
@@ -332,51 +406,74 @@ int main(int argc, char** argv) {
 
     int lastNano = *nano;
     int lastSec = *sec;
-    int nextChildIndex = -1;
-    int messagesSent = 0;
+    int grantedRequests = 0;
+    int immediateRequests = 0;
+    int numMassReleases = 0;
 
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
 
-        if (numProcessesRunning > 0) {
-            incrementClock(sec, nano, numProcessesRunning);
-            nextChildIndex = (nextChildIndex + 1) % numProcessesRunning;
-            // keep incrementing index until a running process is encountered
-            while (!processTable[nextChildIndex].occupied) {
-                nextChildIndex = (nextChildIndex + 1) % numProcessesRunning;
+        incrementClock(sec, nano);
+
+        for (int i = 0; i < outstandingRequests.size(); i++) {
+            msgbuffer buf = outstandingRequests[i];
+            int resourceCode = processResourceMessage(&buf, log_file, true);
+            if (resourceCode == 0 || resourceCode == 2) {
+                grantedRequests++;
+                msgbuffer returnbuf = buf;
+                returnbuf.mtype = buf.sender;
+                returnbuf.sender = getpid();
+                if (msgsnd(msqid, &returnbuf, sizeof(msgbuffer) - sizeof(long),
+                           0) == -1) {
+                    fprintf(stderr,
+                            "msgsnd to child with process id %ld failed\n",
+                            returnbuf.mtype);
+                    return EXIT_FAILURE;
+                }
+                outstandingRequests.erase(outstandingRequests.begin() + i);
+            }
+        }
+        msgbuffer rcvbuf;
+
+        if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), IPC_NOWAIT) ==
+            -1) {
+            if (errno != ENOMSG) {
+                fprintf(stderr, "failed to receive message in parent\n");
+                return EXIT_FAILURE;
+            }
+        } else {
+            if (rcvbuf.status == 1) {
+                processResourceMessage(&rcvbuf, log_file);
+                rmProcess(rcvbuf.sender);
+                printf("OSS: Worker %d terminating\n", rcvbuf.sender);
+                printf("Total processes ran: %d\n", ++totalProcessesRan);
+                numProcessesRunning--;
+            } else {
+                if (rcvbuf.status == 2)
+                    numMassReleases++;
+                int resourceCode = processResourceMessage(&rcvbuf, log_file);
+                if (resourceCode == 0 || resourceCode == 2) {
+                    immediateRequests++;
+                    grantedRequests++;
+                    msgbuffer returnbuf = rcvbuf;
+                    returnbuf.mtype = rcvbuf.sender;
+                    returnbuf.sender = getpid();
+                    if (msgsnd(msqid, &returnbuf,
+                               sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+                        fprintf(stderr,
+                                "msgsnd to child with process id %ld failed\n",
+                                returnbuf.mtype);
+                        return EXIT_FAILURE;
+                    }
+                } else if (resourceCode == -1) {
+                    return EXIT_FAILURE;
+                } else if (resourceCode == 1) {
+                    outstandingRequests.push_back(rcvbuf);
+                }
             }
         }
 
-        if (nextChildIndex >= 0) {
-
-            pid_t nextChildPID = processTable[nextChildIndex].pid;
-
-            buffers[nextChildIndex].mtype = nextChildPID;
-            buffers[nextChildIndex].intData = nextChildPID;
-
-            fprintf(log_file,
-                    "OSS: Sending message to worker %d PID %d at time %d:%d\n",
-                    nextChildIndex, nextChildPID, *sec, *nano);
-            printf("OSS: Sending message to worker %d PID %d at time %d:%d\n",
-                   nextChildIndex, nextChildPID, *sec, *nano);
-
-            if (msgsnd(msqid, &buffers[nextChildIndex],
-                       sizeof(msgbuffer) - sizeof(long), 0) == -1) {
-                fprintf(stderr, "msgsnd to child with process id %d failed\n",
-                        nextChildPID);
-                return EXIT_FAILURE;
-            }
-            messagesSent++;
-
-            msgbuffer rcvbuf;
-
-            if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(),
-                       IPC_NOWAIT) == -1) {
-                if (errno != ENOMSG) {
-                    fprintf(stderr, "failed to receive message in parent\n");
-                    return EXIT_FAILURE;
-                }
-            } else {
-            }
+        if (grantedRequests % 20 == 0 && grantedRequests > 0) {
+            printResourceTable();
         }
 
         long lastTime = lastSec * BILLION + lastNano;
@@ -386,12 +483,16 @@ int main(int argc, char** argv) {
             lastSec = *sec;
             lastNano = *nano;
             printProcessTable(*sec, *nano);
+            printResourceTable();
         }
 
         if (numProcessesRunning >= options.maxSimultaneous)
             continue;
 
         if (numProcessesRunning > SYS_MAX_SIMUL_PROCS)
+            continue;
+
+        if (totalProcessesRan >= options.numProcess)
             continue;
 
         pid_t new_pid = fork();
@@ -418,23 +519,39 @@ int main(int argc, char** argv) {
         } else {
             printf("New PID: %d\n", new_pid);
             addTableEntry(new_pid);
-            totalProcessesRan += 1;
             numProcessesRunning += 1;
         }
     }
+
+    int totalResourcesRequested = 0;
+    for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
+        totalResourcesRequested += resources[rClass].numRequested;
+    }
+
+    float immediateGrantPercent =
+        ((float)immediateRequests / (float)grantedRequests) * 100;
 
     long long totalNano =
         totalProcessesRan * options.childLifetimeSec * BILLION;
     int finalNano = totalNano % BILLION;
     int totalSecs = (totalNano - finalNano) / BILLION;
     printf("OSS PID: %d Terminating\n", getpid());
-    printf("%d workers were launched and terminated\n", totalProcessesRan);
-    printf("OSS sent a total of %d messages\n", messagesSent);
+
+    printf("-------------\n");
+    printf("Total number of resources requested: %d\n",
+           totalResourcesRequested);
+    printf("Total number of mass releases: %d\n", numMassReleases);
+    printf("Percentage of immediate request grantings: %.2f%%\n",
+           immediateGrantPercent);
 
     /* Clean Up Shared Memory */
 
     shmdt(clock);
     shmctl(shm_id, IPC_RMID, NULL);
+    if (msgctl(msqid, IPC_RMID, NULL) == -1) {
+        perror("Failed to remove shared memory/n");
+        exit(1);
+    }
 
     return EXIT_SUCCESS;
 }
