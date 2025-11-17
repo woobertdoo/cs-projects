@@ -21,7 +21,7 @@ const int NANO_INCR = 10000;
 const int BILLION = 1000000000;
 const int SYS_MAX_SIMUL_PROCS = 18;
 int shm_id;
-int* clock;
+int* ossclock;
 int msqid;
 bool verbose = false;
 
@@ -111,14 +111,14 @@ void addTableEntry(int pid) {
         if (!processTable[i].occupied) {
             processTable[i].occupied = true;
             processTable[i].pid = pid;
-            processTable[i].startSeconds = clock[0];
-            processTable[i].startNano = clock[1];
+            processTable[i].startSeconds = ossclock[0];
+            processTable[i].startNano = ossclock[1];
             return;
         }
     }
 }
 
-void incrementClock(int* currentSec, int* currentNano) {
+void incrementossclock(int* currentSec, int* currentNano) {
     *currentNano += NANO_INCR;
     if (*currentNano > BILLION) {
         *currentNano -= BILLION;
@@ -148,11 +148,11 @@ int processResourceMessage(msgbuffer* buf, FILE* logFile,
                     logFile,
                     "OSS: Detected Process %d requesting %d instances of R%d "
                     "at time %d:%d\n",
-                    buf->sender, rAmt, rClass, clock[0], clock[1]);
+                    buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
                 printf(
                     "OSS: Detected Process %d requesting %d instances of R%d "
                     "at time %d:%d\n",
-                    buf->sender, rAmt, rClass, clock[0], clock[1]);
+                    buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
             }
             if (resources[rClass].numAllocated + rAmt >
                 MAX_PER_RESOURCE_CLASS) {
@@ -161,11 +161,11 @@ int processResourceMessage(msgbuffer* buf, FILE* logFile,
                              "OSS: Not enough instances of R%d available, "
                              "Process %d "
                              "added to blocked queue at time %d:%d\n",
-                             rClass, buf->sender, clock[0], clock[1]);
+                             rClass, buf->sender, ossclock[0], ossclock[1]);
                     printf("OSS: Not enough instances of R%d available, "
                            "Process %d "
                            "added to blocked queue at time %d:%d\n",
-                           rClass, buf->sender, clock[0], clock[1]);
+                           rClass, buf->sender, ossclock[0], ossclock[1]);
                 }
                 return 1;
             }
@@ -188,11 +188,11 @@ int processResourceMessage(msgbuffer* buf, FILE* logFile,
                 logFile,
                 "OSS: Granting Process %d request %d instances of R%d at time "
                 "%d:%d\n",
-                buf->sender, rAmt, rClass, clock[0], clock[1]);
+                buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
             printf(
                 "OSS: Granting Process %d request %d instances of R%d at time "
                 "%d:%d\n",
-                buf->sender, rAmt, rClass, clock[0], clock[1]);
+                buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
         }
         return 0;
     } else if (buf->requestOrRelease == 0) {
@@ -220,10 +220,10 @@ int processResourceMessage(msgbuffer* buf, FILE* logFile,
             lfprintf(logFile,
                      "OSS: Acknowledge process %d releasing resources at time "
                      "%d:%d\n",
-                     buf->sender, clock[0], clock[1]);
+                     buf->sender, ossclock[0], ossclock[1]);
             printf("OSS: Acknowledge process %d releasing resources at time "
                    "%d:%d\n",
-                   buf->sender, clock[0], clock[1]);
+                   buf->sender, ossclock[0], ossclock[1]);
             lfprintf(logFile, "%s\n", releaseStr.c_str());
             printf("%s\n", releaseStr.c_str());
         }
@@ -243,7 +243,7 @@ void freeAndExit(int sig) {
     }
 
     // Free shared memory
-    shmdt(clock);
+    shmdt(ossclock);
     shmctl(shm_id, IPC_RMID, NULL);
     if (msgctl(msqid, IPC_RMID, NULL) == -1) {
         perror("Failed to remove shared memory/n");
@@ -254,8 +254,8 @@ void freeAndExit(int sig) {
 }
 
 void printProcessTable(int currentSec, int currentNano) {
-    printf("OSS PID:%d SysclockS:%d SysclockNano:%d\n", getpid(), currentSec,
-           currentNano);
+    printf("OSS PID:%d SysossclockS:%d SysossclockNano:%d\n", getpid(),
+           currentSec, currentNano);
     printf("Process Table:\n");
     printf("Entry Occupied PID StartS StartN\n");
     for (int i = 0; i < options.maxSimultaneous; i++) {
@@ -389,14 +389,14 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    clock = (int*)shmat(shm_id, 0, 0);
-    if (clock == nullptr) {
+    ossclock = (int*)shmat(shm_id, 0, 0);
+    if (ossclock == nullptr) {
         fprintf(stderr, "Parent: Error accessing shared memory\n");
         return EXIT_FAILURE;
     }
 
-    int* sec = &(clock[0]);
-    int* nano = &(clock[1]);
+    int* sec = &(ossclock[0]);
+    int* nano = &(ossclock[1]);
     *sec = *nano = 0;
 
     processTable = new PCB_t[options.maxSimultaneous];
@@ -412,7 +412,7 @@ int main(int argc, char** argv) {
 
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
 
-        incrementClock(sec, nano);
+        incrementossclock(sec, nano);
 
         for (int i = 0; i < outstandingRequests.size(); i++) {
             msgbuffer buf = outstandingRequests[i];
@@ -546,7 +546,7 @@ int main(int argc, char** argv) {
 
     /* Clean Up Shared Memory */
 
-    shmdt(clock);
+    shmdt(ossclock);
     shmctl(shm_id, IPC_RMID, NULL);
     if (msgctl(msqid, IPC_RMID, NULL) == -1) {
         perror("Failed to remove shared memory/n");
