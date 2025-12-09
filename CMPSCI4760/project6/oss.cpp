@@ -7,7 +7,6 @@
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
 #include <string.h>
-#include <string>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/shm.h>  // Access to shared memory functions
@@ -19,8 +18,11 @@ const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int NANO_INCR = 10000;
 const int BILLION = 1000000000;
+const int DISK_RW_TIME = 14 * (BILLION / 1000);
 const int SYS_MAX_SIMUL_PROCS = 18;
 const int FRAME_TABLE_SIZE = 64;
+const int PAGE_SIZE = 1000; // In Bytes
+const int PROCESS_PAGES = 16;
 int shm_id;
 int* ossclock;
 int msqid;
@@ -37,8 +39,8 @@ typedef struct {
 typedef struct {
     long mtype;
     pid_t sender;
-    int requestOrRelease; // 1 for request, 0 for release
-    int resources[NUM_RESOURCE_CLASSES];
+    int address;
+    int dirty;  // dirty bit, 0 for read 1 for write
     int status; // 1 when worker terminates
 } msgbuffer;
 
@@ -47,7 +49,12 @@ typedef struct {
     pid_t pid;
     int startSeconds;
     int startNano;
-    int resourceAllocations[NUM_RESOURCE_CLASSES];
+    //  Value of each page index is the frame it is stored in,
+    //  or -1 if it has not been loaded
+    int pages[PROCESS_PAGES];
+    long long blockedNano;
+    // If process is waiting for a page to be loaded into frame
+    bool deviceQueued;
 } PCB_t;
 
 typedef struct {
@@ -55,6 +62,7 @@ typedef struct {
     pid_t process;
     int page;
     bool occupied;
+    int frameNum;
 } frame_t;
 
 // Global Variables
@@ -62,6 +70,7 @@ options_t options;
 PCB_t* processTable;
 frame_t frameTable[FRAME_TABLE_SIZE];
 std::vector<msgbuffer> outstandingRequests;
+std::vector<frame_t> frameQueue;
 
 int lfprintf(FILE* stream, const char* format, ...) {
     static int lineCount = 0;
@@ -109,9 +118,21 @@ void initiateProcessTable() {
         processTable[i].pid = 0;
         processTable[i].startNano = 0;
         processTable[i].startSeconds = 0;
-        for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
-            processTable[i].resourceAllocations[j] = 0;
+        processTable[i].deviceQueued = false;
+        processTable[i].blockedNano = 0;
+        for (int j = 0; j < PROCESS_PAGES; j++) {
+            processTable[i].pages[j] = -1;
         }
+    }
+}
+
+void initiateFrameTable() {
+    for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
+        frameTable[i].dirtyBit = 0;
+        frameTable[i].occupied = false;
+        frameTable[i].process = -1;
+        frameTable[i].page = -1;
+        frameTable[i].frameNum = i;
     }
 }
 
@@ -122,18 +143,71 @@ void addTableEntry(int pid) {
             processTable[i].pid = pid;
             processTable[i].startSeconds = ossclock[0];
             processTable[i].startNano = ossclock[1];
+            processTable[i].deviceQueued = false;
+            processTable[i].blockedNano = 0;
             return;
         }
     }
 }
 
-void incrementossclock(int* currentSec, int* currentNano) {
-    *currentNano += NANO_INCR;
+void removeFrame(int frameNum) {
+    frameTable[frameNum].occupied = false;
+    frameTable[frameNum].process = -1;
+    frameTable[frameNum].dirtyBit = 0;
+    frameTable[frameNum].page = -1;
+}
+
+// Returns the frame number popped
+int popFrameQueue() {
+    if (frameQueue.size() == 0) {
+        printf("Could not pop frame queue, it's empty!\n");
+        return -1;
+    }
+    frame_t poppedFrame = frameQueue.at(0);
+    int frameNum = poppedFrame.frameNum;
+    removeFrame(frameNum);
+    frameQueue.erase(frameQueue.begin());
+
+    return frameNum;
+}
+// Returns the frame number the page is assigned to
+int addPageToFrameTable(int pageNum, pid_t process) {
+    for (frame_t frame : frameTable) {
+        if (frame.occupied == false) {
+            frame.process = process;
+            frame.page = pageNum;
+            frame.occupied = true;
+            frame.dirtyBit = 0;
+            frameQueue.push_back(frame);
+            frameTable[frame.frameNum] = frame;
+            return frame.frameNum;
+        }
+    }
+
+    // If we still havent found a frame to put the page in
+    // We need to swap a frame out
+    int emptyFrameNum = popFrameQueue();
+    frame_t frame = frameTable[emptyFrameNum];
+    frame.process = process;
+    frame.page = pageNum;
+    frame.occupied = true;
+    frame.dirtyBit = 0;
+    frameQueue.push_back(frame);
+    frameTable[emptyFrameNum] = frame;
+
+    return emptyFrameNum;
+}
+
+int getAddressPage(int address) { return (address / 1000) * 1000; }
+
+void incrementossclock(int* currentSec, int* currentNano, int incrNano) {
+    *currentNano += incrNano;
     if (*currentNano > BILLION) {
         *currentNano -= BILLION;
         *currentSec += 1;
     }
 }
+
 int getProcessIndex(pid_t pid) {
     for (int i = 0; i < options.maxSimultaneous; i++) {
         if (processTable[i].pid == pid) {
@@ -143,105 +217,13 @@ int getProcessIndex(pid_t pid) {
     return -1;
 }
 
-// returns 0 if acceptable request, 1 if resources are clogged,
-// 2 if acceptable release, -1 if resource code is invalid
-int processResourceMessage(msgbuffer* buf, FILE* logFile,
-                           bool recheck = false) {
-    if (buf->requestOrRelease == 1) {
-        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
-            int rAmt = buf->resources[rClass];
-            if (rAmt == 0)
-                continue;
-            if (!recheck) {
-                lfprintf(
-                    logFile,
-                    "OSS: Detected Process %d requesting %d instances of R%d "
-                    "at time %d:%d\n",
-                    buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
-                printf(
-                    "OSS: Detected Process %d requesting %d instances of R%d "
-                    "at time %d:%d\n",
-                    buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
-            }
-            if (resources[rClass].numAllocated + rAmt >
-                MAX_PER_RESOURCE_CLASS) {
-                if (!recheck && verbose) {
-                    lfprintf(logFile,
-                             "OSS: Not enough instances of R%d available, "
-                             "Process %d "
-                             "added to blocked queue at time %d:%d\n",
-                             rClass, buf->sender, ossclock[0], ossclock[1]);
-                    printf("OSS: Not enough instances of R%d available, "
-                           "Process %d "
-                           "added to blocked queue at time %d:%d\n",
-                           rClass, buf->sender, ossclock[0], ossclock[1]);
-                }
-                return 1;
-            }
+bool allProcessesDeviceQueued() {
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        if (processTable[i].occupied && !processTable[i].deviceQueued) {
+            return false;
         }
-        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
-            int rAmt = buf->resources[rClass];
-            if (rAmt == 0)
-                continue;
-            resources[rClass].numAllocated += rAmt;
-            resources[rClass].numRequested += rAmt;
-
-            int workerIndex = getProcessIndex(buf->sender);
-            if (workerIndex == -1) {
-                fprintf(stderr, "Can't find process in PID table\n");
-                return -1;
-            }
-
-            processTable[workerIndex].resourceAllocations[rClass] += rAmt;
-            lfprintf(
-                logFile,
-                "OSS: Granting Process %d request %d instances of R%d at time "
-                "%d:%d\n",
-                buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
-            printf(
-                "OSS: Granting Process %d request %d instances of R%d at time "
-                "%d:%d\n",
-                buf->sender, rAmt, rClass, ossclock[0], ossclock[1]);
-        }
-        return 0;
-    } else if (buf->requestOrRelease == 0) {
-        std::string releaseStr = "\t Resources released:";
-        bool resourcesReleased = false;
-        for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
-            int rAmt = buf->resources[rClass];
-            if (rAmt == 0)
-                continue;
-            resources[rClass].numAllocated -= rAmt;
-            int workerIndex = getProcessIndex(buf->sender);
-            if (workerIndex == -1) {
-                fprintf(stderr, "Can't find process in PID table\n");
-                return -1;
-            }
-
-            processTable[workerIndex].resourceAllocations[rClass] -= rAmt;
-            releaseStr.append(" R");
-            releaseStr.append(std::to_string(rClass));
-            releaseStr.append(":");
-            releaseStr.append(std::to_string(rAmt));
-            resourcesReleased = true;
-        }
-        if (resourcesReleased && verbose) {
-            lfprintf(logFile,
-                     "OSS: Acknowledge process %d releasing resources at time "
-                     "%d:%d\n",
-                     buf->sender, ossclock[0], ossclock[1]);
-            printf("OSS: Acknowledge process %d releasing resources at time "
-                   "%d:%d\n",
-                   buf->sender, ossclock[0], ossclock[1]);
-            lfprintf(logFile, "%s\n", releaseStr.c_str());
-            printf("%s\n", releaseStr.c_str());
-        }
-        return 2;
-    } else {
-        fprintf(stderr, "OSS: Error: Invalid request code %d from %d\n",
-                buf->requestOrRelease, buf->sender);
-        return -1;
     }
+    return true;
 }
 
 void freeAndExit(int sig) {
@@ -276,21 +258,7 @@ void printProcessTable(int currentSec, int currentNano) {
     }
 }
 
-void printResourceTable() {
-    printf("\t       R0  R1  R2  R3  R4  R5  R6  R7  R8  R9\n");
-    for (int i = 0; i < options.maxSimultaneous; i++) {
-        if (processTable[i].pid == 0)
-            continue;
-        std::string resourceRow = "Worker ";
-        resourceRow.append(std::to_string(processTable[i].pid));
-        for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
-            resourceRow.append("   ");
-            resourceRow.append(
-                std::to_string(processTable[i].resourceAllocations[j]));
-        }
-        printf("%s\n", resourceRow.c_str());
-    }
-}
+void printFrameTable() {}
 
 // Remove process from table via pid
 void rmProcess(int pid) {
@@ -300,11 +268,22 @@ void rmProcess(int pid) {
             processTable[i].startNano = 0;
             processTable[i].startSeconds = 0;
             processTable[i].occupied = false;
-            for (int j = 0; j < NUM_RESOURCE_CLASSES; j++) {
-                processTable[i].resourceAllocations[j] = 0;
+            processTable[i].deviceQueued = false;
+            processTable[i].blockedNano = 0;
+            for (int j = 0; j < PROCESS_PAGES; j++) {
+                processTable[i].pages[j] = -1;
             }
         }
     }
+}
+
+void fulfillHeadRequest() {
+    msgbuffer headReq = outstandingRequests.at(0);
+    outstandingRequests.erase(outstandingRequests.begin());
+    int pageNum = getAddressPage(headReq.address);
+
+    int frameNum = addPageToFrameTable(pageNum, headReq.sender);
+    frameTable[frameNum].dirtyBit = headReq.dirty;
 }
 
 void printSysStart() {
@@ -415,33 +394,31 @@ int main(int argc, char** argv) {
 
     int lastNano = *nano;
     int lastSec = *sec;
-    int grantedRequests = 0;
-    int immediateRequests = 0;
-    int numMassReleases = 0;
+    int pageFaultCount;
 
     while (totalProcessesRan < options.numProcess || !isProcessTableEmpty()) {
 
-        incrementossclock(sec, nano);
+        incrementossclock(sec, nano, NANO_INCR);
 
-        for (int i = 0; i < outstandingRequests.size(); i++) {
-            msgbuffer buf = outstandingRequests[i];
-            int resourceCode = processResourceMessage(&buf, log_file, true);
-            if (resourceCode == 0 || resourceCode == 2) {
-                grantedRequests++;
-                msgbuffer returnbuf = buf;
-                returnbuf.mtype = buf.sender;
-                returnbuf.sender = getpid();
-                if (msgsnd(msqid, &returnbuf, sizeof(msgbuffer) - sizeof(long),
-                           0) == -1) {
-                    fprintf(stderr,
-                            "msgsnd to child with process id %ld failed\n",
-                            returnbuf.mtype);
-                    return EXIT_FAILURE;
-                }
-                outstandingRequests.erase(outstandingRequests.begin() + i);
+        msgbuffer rcvbuf;
+
+        if (allProcessesDeviceQueued()) {
+            pid_t headProcess = outstandingRequests.at(0).sender;
+            long long curNano = *sec * BILLION + *nano;
+            long long processUnblockNano =
+                processTable[getProcessIndex(headProcess)].blockedNano +
+                DISK_RW_TIME;
+            if (processUnblockNano > curNano)
+                incrementossclock(sec, nano, processUnblockNano - curNano);
+        } else {
+            pid_t headProcess = outstandingRequests.at(0).sender;
+            long long curTime = *sec * BILLION + *nano;
+            if (processTable[getProcessIndex(headProcess)].blockedNano +
+                    DISK_RW_TIME >=
+                curTime) {
+                fulfillHeadRequest();
             }
         }
-        msgbuffer rcvbuf;
 
         if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), IPC_NOWAIT) ==
             -1) {
@@ -450,39 +427,16 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
         } else {
-            if (rcvbuf.status == 1) {
-                processResourceMessage(&rcvbuf, log_file);
-                rmProcess(rcvbuf.sender);
-                printf("OSS: Worker %d terminating\n", rcvbuf.sender);
-                printf("Total processes ran: %d\n", ++totalProcessesRan);
-                numProcessesRunning--;
+            int reqAddress = rcvbuf.address;
+            int page = getAddressPage(reqAddress);
+            int processIndex = getProcessIndex(rcvbuf.sender);
+            if (processTable[processIndex].pages[page] == -1) {
+                pageFaultCount++;
+                processTable[processIndex].deviceQueued = true;
+                processTable[processIndex].blockedNano = *sec * BILLION + *nano;
+                outstandingRequests.push_back(rcvbuf);
             } else {
-                if (rcvbuf.status == 2)
-                    numMassReleases++;
-                int resourceCode = processResourceMessage(&rcvbuf, log_file);
-                if (resourceCode == 0 || resourceCode == 2) {
-                    immediateRequests++;
-                    grantedRequests++;
-                    msgbuffer returnbuf = rcvbuf;
-                    returnbuf.mtype = rcvbuf.sender;
-                    returnbuf.sender = getpid();
-                    if (msgsnd(msqid, &returnbuf,
-                               sizeof(msgbuffer) - sizeof(long), 0) == -1) {
-                        fprintf(stderr,
-                                "msgsnd to child with process id %ld failed\n",
-                                returnbuf.mtype);
-                        return EXIT_FAILURE;
-                    }
-                } else if (resourceCode == -1) {
-                    return EXIT_FAILURE;
-                } else if (resourceCode == 1) {
-                    outstandingRequests.push_back(rcvbuf);
-                }
             }
-        }
-
-        if (grantedRequests % 20 == 0 && grantedRequests > 0) {
-            printResourceTable();
         }
 
         long lastTime = lastSec * BILLION + lastNano;
@@ -492,7 +446,6 @@ int main(int argc, char** argv) {
             lastSec = *sec;
             lastNano = *nano;
             printProcessTable(*sec, *nano);
-            printResourceTable();
         }
 
         if (numProcessesRunning >= options.maxSimultaneous)
@@ -532,14 +485,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    int totalResourcesRequested = 0;
-    for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
-        totalResourcesRequested += resources[rClass].numRequested;
-    }
-
-    float immediateGrantPercent =
-        ((float)immediateRequests / (float)grantedRequests) * 100;
-
     long long totalNano =
         totalProcessesRan * options.childLifetimeSec * BILLION;
     int finalNano = totalNano % BILLION;
@@ -547,11 +492,6 @@ int main(int argc, char** argv) {
     printf("OSS PID: %d Terminating\n", getpid());
 
     printf("-------------\n");
-    printf("Total number of resources requested: %d\n",
-           totalResourcesRequested);
-    printf("Total number of mass releases: %d\n", numMassReleases);
-    printf("Percentage of immediate request grantings: %.2f%%\n",
-           immediateGrantPercent);
 
     /* Clean Up Shared Memory */
 
