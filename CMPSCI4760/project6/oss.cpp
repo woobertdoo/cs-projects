@@ -23,6 +23,7 @@ const int SYS_MAX_SIMUL_PROCS = 18;
 const int FRAME_TABLE_SIZE = 64;
 const int PAGE_SIZE = 1000; // In Bytes
 const int PROCESS_PAGES = 16;
+const int PAGE_NONFAULT_INCR = 100; // Increment when there is no page fault
 int shm_id;
 int* ossclock;
 int msqid;
@@ -277,13 +278,16 @@ void rmProcess(int pid) {
     }
 }
 
-void fulfillHeadRequest() {
+// Returns the buffer that was fulfilled
+msgbuffer fulfillHeadRequest() {
     msgbuffer headReq = outstandingRequests.at(0);
     outstandingRequests.erase(outstandingRequests.begin());
     int pageNum = getAddressPage(headReq.address);
 
     int frameNum = addPageToFrameTable(pageNum, headReq.sender);
     frameTable[frameNum].dirtyBit = headReq.dirty;
+
+    return headReq;
 }
 
 void printSysStart() {
@@ -408,15 +412,37 @@ int main(int argc, char** argv) {
             long long processUnblockNano =
                 processTable[getProcessIndex(headProcess)].blockedNano +
                 DISK_RW_TIME;
+            // Need to increment the clock to the time that the head request
+            // would have been processed
             if (processUnblockNano > curNano)
                 incrementossclock(sec, nano, processUnblockNano - curNano);
-        } else {
+            msgbuffer headReq = fulfillHeadRequest();
+
+            msgbuffer buf = headReq;
+            buf.sender = getpid();
+            buf.mtype = headReq.sender;
+
+            if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
+                -1) {
+                perror("Failed to send message to parent\n");
+                return EXIT_FAILURE;
+            }
+        } else if (outstandingRequests.size() > 0) {
             pid_t headProcess = outstandingRequests.at(0).sender;
             long long curTime = *sec * BILLION + *nano;
             if (processTable[getProcessIndex(headProcess)].blockedNano +
                     DISK_RW_TIME >=
                 curTime) {
-                fulfillHeadRequest();
+                msgbuffer headReq = fulfillHeadRequest();
+                msgbuffer buf = headReq;
+                buf.sender = getpid();
+                buf.mtype = headReq.sender;
+
+                if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
+                    -1) {
+                    perror("Failed to send message to parent\n");
+                    return EXIT_FAILURE;
+                }
             }
         }
 
@@ -426,6 +452,8 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "failed to receive message in parent\n");
                 return EXIT_FAILURE;
             }
+        } else if (rcvbuf.status == 1) {
+
         } else {
             int reqAddress = rcvbuf.address;
             int page = getAddressPage(reqAddress);
@@ -436,6 +464,21 @@ int main(int argc, char** argv) {
                 processTable[processIndex].blockedNano = *sec * BILLION + *nano;
                 outstandingRequests.push_back(rcvbuf);
             } else {
+                int frameNum = processTable[processIndex].pages[page];
+                frameTable[frameNum].dirtyBit = rcvbuf.dirty;
+                msgbuffer buf;
+                buf.mtype = rcvbuf.sender;
+                buf.sender = getpid();
+                buf.dirty = rcvbuf.dirty;
+                buf.address = rcvbuf.address;
+                buf.status = 0;
+
+                if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
+                    -1) {
+                    perror("Failed to send message to parent\n");
+                    return EXIT_FAILURE;
+                }
+                incrementossclock(sec, nano, PAGE_NONFAULT_INCR);
             }
         }
 
