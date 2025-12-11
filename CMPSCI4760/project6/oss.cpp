@@ -1,4 +1,3 @@
-#include "resources.h"
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -21,7 +20,7 @@ const int BILLION = 1000000000;
 const int DISK_RW_TIME = 14 * (BILLION / 1000);
 const int SYS_MAX_SIMUL_PROCS = 18;
 const int FRAME_TABLE_SIZE = 64;
-const int PAGE_SIZE = 1000; // In Bytes
+const int PAGE_SIZE = 1024; // In Bytes
 const int PROCESS_PAGES = 16;
 const int PAGE_NONFAULT_INCR = 100; // Increment when there is no page fault
 int shm_id;
@@ -199,7 +198,7 @@ int addPageToFrameTable(int pageNum, pid_t process) {
     return emptyFrameNum;
 }
 
-int getAddressPage(int address) { return (address / 1000) * 1000; }
+int getAddressPage(int address) { return (address / PAGE_SIZE) * PAGE_SIZE; }
 
 void incrementossclock(int* currentSec, int* currentNano, int incrNano) {
     *currentNano += incrNano;
@@ -219,6 +218,8 @@ int getProcessIndex(pid_t pid) {
 }
 
 bool allProcessesDeviceQueued() {
+    if (isProcessTableEmpty())
+        return false;
     for (int i = 0; i < options.maxSimultaneous; i++) {
         if (processTable[i].occupied && !processTable[i].deviceQueued) {
             return false;
@@ -259,7 +260,19 @@ void printProcessTable(int currentSec, int currentNano) {
     }
 }
 
-void printFrameTable() {}
+void printFrameTable(FILE* logFile) {
+    lfprintf(logFile, "Frame   Occupied   DirtyBit   Process    Page\n");
+    printf("Frame   Occupied   DirtyBit   Process    Page\n");
+    for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
+        const char* occupiedStatus = frameTable[i].occupied ? "Y" : "N";
+        lfprintf(logFile, "%d       %s      %d        %d       %d\n", i,
+                 occupiedStatus, frameTable[i].dirtyBit, frameTable[i].process,
+                 frameTable[i].page);
+        printf("%d       %s      %d        %d       %d\n", i, occupiedStatus,
+               frameTable[i].dirtyBit, frameTable[i].process,
+               frameTable[i].page);
+    }
+}
 
 // Remove process from table via pid
 void rmProcess(int pid) {
@@ -280,8 +293,12 @@ void rmProcess(int pid) {
 
 // Returns the buffer that was fulfilled
 msgbuffer fulfillHeadRequest() {
+    printf("Getting head of request queue\n");
     msgbuffer headReq = outstandingRequests.at(0);
-    outstandingRequests.erase(outstandingRequests.begin());
+    printf("Got head of request queue\n");
+    if (outstandingRequests.size() > 0) {
+        outstandingRequests.erase(outstandingRequests.begin());
+    }
     int pageNum = getAddressPage(headReq.address);
 
     int frameNum = addPageToFrameTable(pageNum, headReq.sender);
@@ -406,7 +423,7 @@ int main(int argc, char** argv) {
 
         msgbuffer rcvbuf;
 
-        if (allProcessesDeviceQueued()) {
+        if (outstandingRequests.size() > 0 && allProcessesDeviceQueued()) {
             pid_t headProcess = outstandingRequests.at(0).sender;
             long long curNano = *sec * BILLION + *nano;
             long long processUnblockNano =
@@ -453,16 +470,21 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
         } else if (rcvbuf.status == 1) {
-
+            rmProcess(rcvbuf.sender);
         } else {
             int reqAddress = rcvbuf.address;
             int page = getAddressPage(reqAddress);
             int processIndex = getProcessIndex(rcvbuf.sender);
+
             if (processTable[processIndex].pages[page] == -1) {
                 pageFaultCount++;
                 processTable[processIndex].deviceQueued = true;
                 processTable[processIndex].blockedNano = *sec * BILLION + *nano;
                 outstandingRequests.push_back(rcvbuf);
+                lfprintf(log_file, "Address %d is not in a frame, pagefault\n",
+                         rcvbuf.address);
+                printf("Address %d is not in a frame, pagefault\n",
+                       rcvbuf.address);
             } else {
                 int frameNum = processTable[processIndex].pages[page];
                 frameTable[frameNum].dirtyBit = rcvbuf.dirty;
@@ -488,7 +510,7 @@ int main(int argc, char** argv) {
         if (now - lastTime >= BILLION / 2) {
             lastSec = *sec;
             lastNano = *nano;
-            printProcessTable(*sec, *nano);
+            printFrameTable(log_file);
         }
 
         if (numProcessesRunning >= options.maxSimultaneous)

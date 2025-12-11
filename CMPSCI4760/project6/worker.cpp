@@ -12,15 +12,17 @@
 typedef struct {
     long mtype;
     pid_t sender;
-    int requestOrRelease; // 1 for request, 0 for release
-    int resources[NUM_RESOURCE_CLASSES];
-    int status; // 1 when worker terminates, 2 if mass release + request
+    int address;
+    int dirty;  // dirty bit, 0 for read 1 for write
+    int status; // 1 when worker terminates
 } msgbuffer;
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
 const int BILLION = pow(10, 9);
-const int REQUEST_RATIO = 60;
+const int READ_RATIO = 60;
+const int PAGE_SIZE = 1024; // In Bytes
+const int PROCESS_PAGES = 16;
 
 /* Resource Request Codes */
 const int REQUEST_AVAILABLE = 0;
@@ -38,48 +40,6 @@ int resourcesAllocated[NUM_RESOURCE_CLASSES];
 int* clock;
 int shm_id;
 int msqid;
-
-void initResourceMatrix() {
-    for (int i = 0; i < NUM_RESOURCE_CLASSES; i++)
-        resourcesAllocated[i] = 0;
-}
-
-/*
- * Returns status code based on whether or not a new resource can be requested.
- * REQUEST_AVAILABLE: Resource is valid to be requested.
- * ERR_RESOURCE_ORDERING: Resource can not be requested,
- * as it would violate the ordering rule.
- * ERR_RESOURCE_FULL: Resource can not be requested, as there are not enough in
- * the system.
- * ERR_NO_RESOURCE: Tried to release a resource we currently have none of.
- * */
-
-int canRequestResource(int resourceClass) {
-    if (resourcesAllocated[resourceClass] == MAX_PER_RESOURCE_CLASS) {
-        return ERR_RESOURCE_FULL;
-    }
-    for (int i = resourceClass; i < NUM_RESOURCE_CLASSES; i++) {
-        if (resourcesAllocated[i] > 0) {
-            return ERR_RESOURCE_ORDERING;
-        }
-    }
-    return REQUEST_AVAILABLE;
-}
-
-int canReleaseResource(int resourceClass) {
-    if (resourcesAllocated[resourceClass] == 0) {
-        return ERR_NO_RESOURCE;
-    }
-    return RELEASE_AVAILABLE;
-}
-
-bool resourcesEmpty() {
-    for (int i = 0; i < NUM_RESOURCE_CLASSES; i++) {
-        if (resourcesAllocated[i] > 0)
-            return false;
-    }
-    return true;
-}
 
 void freeAndExit(int sig) {
     // Free shared memory
@@ -175,90 +135,42 @@ int main(int argc, char** argv) {
         buf.mtype = getppid();
         buf.status = 0;
         buf.sender = getpid();
-        for (int i = 0; i < NUM_RESOURCE_CLASSES; i++) {
-            buf.resources[i] = 0;
-        }
 
-        int resourceClass = rand() % NUM_RESOURCE_CLASSES;
-        // Worker should request if there are no resources allocated to it
-        if (rand() % 100 < REQUEST_RATIO || resourcesEmpty()) {
-            buf.requestOrRelease = 1;
-            int requestCode = canRequestResource(resourceClass);
-            while (requestCode == ERR_RESOURCE_FULL) {
-                resourceClass = rand() % NUM_RESOURCE_CLASSES;
-                requestCode = canRequestResource(resourceClass);
-            }
-            if (requestCode == ERR_RESOURCE_ORDERING) {
-                // Releasing order-violating resources
-                for (int rClass = resourceClass; rClass < NUM_RESOURCE_CLASSES;
-                     rClass++) {
-                    buf.resources[rClass] = resourcesAllocated[rClass];
-                }
-                buf.requestOrRelease = 0;
-                buf.status = 2;
-                if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
-                    -1) {
-                    perror("Failed to send message to parent\n");
-                    return EXIT_FAILURE;
-                }
-                msgbuffer rcvbuf;
-                if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) ==
-                    -1) {
-                    perror("Failed to receive message from parent\n");
-                    return EXIT_FAILURE;
-                }
-
-                buf.requestOrRelease = 1;
-            }
-            buf.status = 0;
-            buf.resources[resourceClass] += 1;
-            if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
-                -1) {
-                perror("Failed to send message to parent\n");
-                return EXIT_FAILURE;
-            }
-            if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
-                perror("Failed to receive message from parent\n");
-                return EXIT_FAILURE;
-            }
-
-            resourcesAllocated[resourceClass] += 1;
-
+        if (rand() % 100 < READ_RATIO) {
+            buf.dirty = 0;
         } else {
-            while (canReleaseResource(resourceClass) == ERR_NO_RESOURCE) {
-                resourceClass = rand() % NUM_RESOURCE_CLASSES;
-            }
-            buf.resources[resourceClass] = resourcesAllocated[resourceClass];
-            buf.requestOrRelease = 0;
-            if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
-                -1) {
-                perror("Failed to send message to parent\n");
-                return EXIT_FAILURE;
-            }
-            if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
-                perror("Failed to receive message from parent\n");
-                return EXIT_FAILURE;
-            }
-            resourcesAllocated[resourceClass] = 0;
+            buf.dirty = 1;
         }
+
+        int pageNum = rand() % PROCESS_PAGES;
+
+        int address = pageNum * PAGE_SIZE + (rand() % (PAGE_SIZE - 1));
+
+        buf.address = address;
 
         lastMessageSentNano = *sec * BILLION + *nano;
         // Check if the program should start termination
         if ((*sec > endSec) || (*sec == endSec && *nano >= endNano)) {
             shouldTerm = true;
             buf.status = 1;
-            buf.mtype = getppid();
-            buf.sender = getpid();
-            for (int rClass = 0; rClass < NUM_RESOURCE_CLASSES; rClass++) {
-                buf.resources[rClass] = resourcesAllocated[rClass];
-            }
-            buf.requestOrRelease = 0;
             if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
                 -1) {
                 perror("Failed to send message to parent\n");
                 return EXIT_FAILURE;
             }
             break;
+        }
+
+        if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+            perror("Failed to send message to parent\n");
+            return EXIT_FAILURE;
+        }
+
+        msgbuffer rcvbuf;
+
+        if (msgrcv(msqid, &rcvbuf, sizeof(msgbuffer), getpid(), 0) == -1) {
+            perror("Failed to receive message from parent\n");
+            return EXIT_FAILURE;
         }
     } while (!shouldTerm);
 
