@@ -15,7 +15,7 @@
 
 const int SHM_KEY = ftok("oss.cpp", 0);
 const int BUFF_SZ = sizeof(int) * 2;
-const int NANO_INCR = 10000;
+const int NANO_INCR = 100000;
 const int BILLION = 1000000000;
 const int DISK_RW_TIME = 14 * (BILLION / 1000);
 const int SYS_MAX_SIMUL_PROCS = 18;
@@ -145,6 +145,9 @@ void addTableEntry(int pid) {
             processTable[i].startNano = ossclock[1];
             processTable[i].deviceQueued = false;
             processTable[i].blockedNano = 0;
+            for (int j = 0; j < PROCESS_PAGES; j++) {
+                processTable[i].pages[j] = -1;
+            }
             return;
         }
     }
@@ -172,33 +175,36 @@ int popFrameQueue() {
 }
 // Returns the frame number the page is assigned to
 int addPageToFrameTable(int pageNum, pid_t process) {
-    for (frame_t frame : frameTable) {
-        if (frame.occupied == false) {
+    for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
+        frame_t frame;
+        if (frameTable[i].occupied == false) {
             frame.process = process;
             frame.page = pageNum;
             frame.occupied = true;
             frame.dirtyBit = 0;
+            frame.frameNum = i;
             frameQueue.push_back(frame);
-            frameTable[frame.frameNum] = frame;
-            return frame.frameNum;
+            frameTable[i] = frame;
+            return i;
         }
     }
 
     // If we still havent found a frame to put the page in
     // We need to swap a frame out
     int emptyFrameNum = popFrameQueue();
-    frame_t frame = frameTable[emptyFrameNum];
+    frame_t frame;
     frame.process = process;
     frame.page = pageNum;
     frame.occupied = true;
     frame.dirtyBit = 0;
+    frame.frameNum = emptyFrameNum;
     frameQueue.push_back(frame);
     frameTable[emptyFrameNum] = frame;
 
     return emptyFrameNum;
 }
 
-int getAddressPage(int address) { return (address / PAGE_SIZE) * PAGE_SIZE; }
+int getAddressPage(int address) { return address / PAGE_SIZE; }
 
 void incrementossclock(int* currentSec, int* currentNano, int incrNano) {
     *currentNano += incrNano;
@@ -318,9 +324,9 @@ void printSysStart() {
 int main(int argc, char** argv) {
 
     // Set up signal handler
-    signal(SIGALRM, freeAndExit);
+    //    signal(SIGALRM, freeAndExit);
     signal(SIGINT, freeAndExit);
-    alarm(5);
+    //   alarm(5);
 
     // Set Default Options
     // Default behavior will immediately exit the process
@@ -444,6 +450,7 @@ int main(int argc, char** argv) {
                 perror("Failed to send message to parent\n");
                 return EXIT_FAILURE;
             }
+            printFrameTable(log_file);
         } else if (outstandingRequests.size() > 0) {
             pid_t headProcess = outstandingRequests.at(0).sender;
             long long curTime = *sec * BILLION + *nano;
@@ -460,6 +467,7 @@ int main(int argc, char** argv) {
                     perror("Failed to send message to parent\n");
                     return EXIT_FAILURE;
                 }
+                printFrameTable(log_file);
             }
         }
 
