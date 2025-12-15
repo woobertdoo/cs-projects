@@ -6,6 +6,7 @@
 #include <stdio.h>  // Access to C standard I/O functions like printf
 #include <stdlib.h> // Access to EXIT_SUCCESS, EXIT_FAILURE
 #include <string.h>
+#include <string>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/shm.h>  // Access to shared memory functions
@@ -173,36 +174,6 @@ int popFrameQueue() {
 
     return frameNum;
 }
-// Returns the frame number the page is assigned to
-int addPageToFrameTable(int pageNum, pid_t process) {
-    for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
-        frame_t frame;
-        if (frameTable[i].occupied == false) {
-            frame.process = process;
-            frame.page = pageNum;
-            frame.occupied = true;
-            frame.dirtyBit = 0;
-            frame.frameNum = i;
-            frameQueue.push_back(frame);
-            frameTable[i] = frame;
-            return i;
-        }
-    }
-
-    // If we still havent found a frame to put the page in
-    // We need to swap a frame out
-    int emptyFrameNum = popFrameQueue();
-    frame_t frame;
-    frame.process = process;
-    frame.page = pageNum;
-    frame.occupied = true;
-    frame.dirtyBit = 0;
-    frame.frameNum = emptyFrameNum;
-    frameQueue.push_back(frame);
-    frameTable[emptyFrameNum] = frame;
-
-    return emptyFrameNum;
-}
 
 int getAddressPage(int address) { return address / PAGE_SIZE; }
 
@@ -221,6 +192,40 @@ int getProcessIndex(pid_t pid) {
         }
     }
     return -1;
+}
+// Returns the frame number the page is assigned to
+int addPageToFrameTable(int pageNum, pid_t process) {
+    for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
+        frame_t frame;
+        if (frameTable[i].occupied == false) {
+            frame.process = process;
+            frame.page = pageNum;
+            frame.occupied = true;
+            frame.dirtyBit = 0;
+            frame.frameNum = i;
+            frameQueue.push_back(frame);
+            frameTable[i] = frame;
+            int processIndex = getProcessIndex(process);
+            processTable[processIndex].pages[pageNum] = i;
+            return i;
+        }
+    }
+
+    // If we still havent found a frame to put the page in
+    // We need to swap a frame out
+    int emptyFrameNum = popFrameQueue();
+    frame_t frame;
+    frame.process = process;
+    frame.page = pageNum;
+    frame.occupied = true;
+    frame.dirtyBit = 0;
+    frame.frameNum = emptyFrameNum;
+    frameQueue.push_back(frame);
+    frameTable[emptyFrameNum] = frame;
+    int processIndex = getProcessIndex(process);
+    processTable[processIndex].pages[pageNum] = emptyFrameNum;
+
+    return emptyFrameNum;
 }
 
 bool allProcessesDeviceQueued() {
@@ -267,16 +272,38 @@ void printProcessTable(int currentSec, int currentNano) {
 }
 
 void printFrameTable(FILE* logFile) {
-    lfprintf(logFile, "Frame   Occupied   DirtyBit   Process    Page\n");
-    printf("Frame   Occupied   DirtyBit   Process    Page\n");
+    int columnWidth = 10;
+    lfprintf(logFile, "%-*s | %-*s | %-*s | %-*s | %-*s\n", columnWidth,
+             "Frame", columnWidth, "Occupied", columnWidth, "DirtyBit",
+             columnWidth, "Process", columnWidth, "Page");
+    printf("%-*s | %-*s | %-*s | %-*s | %-*s\n", columnWidth, "Frame",
+           columnWidth, "Occupied", columnWidth, "DirtyBit", columnWidth,
+           "Process", columnWidth, "Page");
     for (int i = 0; i < FRAME_TABLE_SIZE; i++) {
-        const char* occupiedStatus = frameTable[i].occupied ? "Y" : "N";
-        lfprintf(logFile, "%d       %s      %d        %d       %d\n", i,
-                 occupiedStatus, frameTable[i].dirtyBit, frameTable[i].process,
-                 frameTable[i].page);
-        printf("%d       %s      %d        %d       %d\n", i, occupiedStatus,
-               frameTable[i].dirtyBit, frameTable[i].process,
-               frameTable[i].page);
+        frame_t frame = frameTable[i];
+        const char* occupiedStatus = frame.occupied ? "Yes" : "No";
+        lfprintf(logFile, "%-*d | %-*s | %-*d | %-*d | %-*d\n", columnWidth, i,
+                 columnWidth, occupiedStatus, columnWidth, frame.dirtyBit,
+                 columnWidth, frame.process, columnWidth, frame.page);
+        printf("%-*d | %-*s | %-*d | %-*d | %-*d\n", columnWidth, i,
+               columnWidth, occupiedStatus, columnWidth, frame.dirtyBit,
+               columnWidth, frame.process, columnWidth, frame.page);
+    }
+}
+
+void printProcessPages(FILE* logFile) {
+    for (int i = 0; i < options.maxSimultaneous; i++) {
+        PCB_t process = processTable[i];
+        std::string pageArray = "[";
+        for (int j = 0; j < PROCESS_PAGES - 1; j++) {
+            pageArray.append(std::to_string(process.pages[j]));
+            pageArray.append(", ");
+        }
+        pageArray.append(std::to_string(process.pages[9]));
+        pageArray.append("]");
+
+        lfprintf(logFile, "P%d: %s\n", process.pid, pageArray.c_str());
+        printf("P%d: %s\n", process.pid, pageArray.c_str());
     }
 }
 
@@ -298,10 +325,8 @@ void rmProcess(int pid) {
 }
 
 // Returns the buffer that was fulfilled
-msgbuffer fulfillHeadRequest() {
-    printf("Getting head of request queue\n");
+msgbuffer fulfillHeadRequest(FILE* logFile) {
     msgbuffer headReq = outstandingRequests.at(0);
-    printf("Got head of request queue\n");
     if (outstandingRequests.size() > 0) {
         outstandingRequests.erase(outstandingRequests.begin());
     }
@@ -309,6 +334,9 @@ msgbuffer fulfillHeadRequest() {
 
     int frameNum = addPageToFrameTable(pageNum, headReq.sender);
     frameTable[frameNum].dirtyBit = headReq.dirty;
+
+    printf("OSS: Page %d for Process %d put into frame %d\n", pageNum,
+           headReq.sender, frameNum);
 
     return headReq;
 }
@@ -439,7 +467,7 @@ int main(int argc, char** argv) {
             // would have been processed
             if (processUnblockNano > curNano)
                 incrementossclock(sec, nano, processUnblockNano - curNano);
-            msgbuffer headReq = fulfillHeadRequest();
+            msgbuffer headReq = fulfillHeadRequest(log_file);
 
             msgbuffer buf = headReq;
             buf.sender = getpid();
@@ -450,14 +478,13 @@ int main(int argc, char** argv) {
                 perror("Failed to send message to parent\n");
                 return EXIT_FAILURE;
             }
-            printFrameTable(log_file);
         } else if (outstandingRequests.size() > 0) {
             pid_t headProcess = outstandingRequests.at(0).sender;
             long long curTime = *sec * BILLION + *nano;
             if (processTable[getProcessIndex(headProcess)].blockedNano +
                     DISK_RW_TIME >=
                 curTime) {
-                msgbuffer headReq = fulfillHeadRequest();
+                msgbuffer headReq = fulfillHeadRequest(log_file);
                 msgbuffer buf = headReq;
                 buf.sender = getpid();
                 buf.mtype = headReq.sender;
@@ -467,7 +494,6 @@ int main(int argc, char** argv) {
                     perror("Failed to send message to parent\n");
                     return EXIT_FAILURE;
                 }
-                printFrameTable(log_file);
             }
         }
 
@@ -478,7 +504,10 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
         } else if (rcvbuf.status == 1) {
+            printf("OSS: Detected process %d terminating\n", rcvbuf.sender);
+            totalProcessesRan++;
             rmProcess(rcvbuf.sender);
+            numProcessesRunning--;
         } else {
             int reqAddress = rcvbuf.address;
             int page = getAddressPage(reqAddress);
@@ -503,6 +532,16 @@ int main(int argc, char** argv) {
                 buf.address = rcvbuf.address;
                 buf.status = 0;
 
+                if (rcvbuf.dirty == 0) {
+                    printf("OSS: Address %d in frame %d, giving data to "
+                           "process %d at time %d:%d\n",
+                           reqAddress, frameNum, rcvbuf.sender, *sec, *nano);
+                } else if (rcvbuf.dirty == 1) {
+                    printf("OSS: Address %d in frame %d, writing data to frame "
+                           "at time %d:%d\n",
+                           reqAddress, frameNum, *sec, *nano);
+                }
+
                 if (msgsnd(msqid, &buf, sizeof(msgbuffer) - sizeof(long), 0) ==
                     -1) {
                     perror("Failed to send message to parent\n");
@@ -519,6 +558,7 @@ int main(int argc, char** argv) {
             lastSec = *sec;
             lastNano = *nano;
             printFrameTable(log_file);
+            printProcessPages(log_file);
         }
 
         if (numProcessesRunning >= options.maxSimultaneous)
