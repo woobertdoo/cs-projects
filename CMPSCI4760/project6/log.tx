@@ -1,0 +1,316 @@
+Address 10153 is not in a frame, pagefault
+Address 6327 is not in a frame, pagefault
+Address 4123 is not in a frame, pagefault
+Address 2298 is not in a frame, pagefault
+Address 12977 is not in a frame, pagefault
+Address 15417 is not in a frame, pagefault
+Address 3695 is not in a frame, pagefault
+Address 14091 is not in a frame, pagefault
+Address 5739 is not in a frame, pagefault
+Address 8356 is not in a frame, pagefault
+Address 10360 is not in a frame, pagefault
+Address 8134 is not in a frame, pagefault
+Address 404 is not in a frame, pagefault
+Address 1994 is not in a frame, pagefault
+Address 11460 is not in a frame, pagefault
+Address 15249 is not in a frame, pagefault
+Address 10153 is not in a frame, pagefault
+Address 7630 is not in a frame, pagefault
+Address 3067 is not in a frame, pagefault
+Address 5801 is not in a frame, pagefault
+Address 11563 is not in a frame, pagefault
+Address 12819 is not in a frame, pagefault
+Address 1292 is not in a frame, pagefault
+Address 10968 is not in a frame, pagefault
+Address 4123 is not in a frame, pagefault
+Address 666 is not in a frame, pagefault
+Address 15417 is not in a frame, pagefault
+Address 3695 is not in a frame, pagefault
+Address 6759 is not in a frame, pagefault
+Address 15183 is not in a frame, pagefault
+Address 13489 is not in a frame, pagefault
+Address 8356 is not in a frame, pagefault
+Frame      | Occupied   | DirtyBit   | Process    | Page      
+0          | Yes        | 0          | 71318      | 9         
+1          | Yes        | 0          | 71318      | 6         
+2          | Yes        | 0          | 71318      | 4         
+3          | Yes        | 0          | 71318      | 2         
+4          | Yes        | 0          | 71318      | 12        
+5          | Yes        | 0          | 71318      | 15        
+6          | Yes        | 0          | 71318      | 3         
+7          | Yes        | 0          | 71318      | 13        
+8          | Yes        | 1          | 71318      | 5         
+9          | Yes        | 0          | 71318      | 8         
+10         | Yes        | 0          | 71318      | 10        
+11         | Yes        | 0          | 71318      | 7         
+12         | Yes        | 0          | 71318      | 0         
+13         | Yes        | 0          | 71318      | 1         
+14         | Yes        | 0          | 71318      | 11        
+15         | Yes        | 1          | 71318      | 14        
+16         | Yes        | 1          | 71317      | 9         
+17         | Yes        | 1          | 71317      | 7         
+18         | Yes        | 0          | 71317      | 2         
+19         | Yes        | 1          | 71317      | 5         
+20         | Yes        | 1          | 71317      | 11        
+21         | Yes        | 0          | 71317      | 12        
+22         | Yes        | 0          | 71317      | 1         
+23         | Yes        | 0          | 71317      | 10        
+24         | Yes        | 1          | 71317      | 4         
+25         | Yes        | 0          | 71317      | 0         
+26         | Yes        | 0          | 71317      | 15        
+27         | Yes        | 1          | 71317      | 3         
+28         | Yes        | 1          | 71317      | 6         
+29         | Yes        | 0          | 71317      | 14        
+30         | Yes        | 1          | 71317      | 13        
+31         | Yes        | 0          | 71317      | 8         
+32         | No         | 0          | 0          | 0         
+33         | No         | 0          | 0          | 0         
+34         | No         | 0          | 0          | 0         
+35         | No         | 0          | 0          | 0         
+36         | No         | 0          | 0          | 0         
+37         | No         | 0          | 0          | 0         
+38         | No         | 0          | 0          | 0         
+39         | No         | 0          | 0          | 0         
+40         | No         | 0          | 0          | 0         
+41         | No         | 0          | 0          | 0         
+42         | No         | 0          | 0          | 0         
+43         | No         | 0          | 0          | 0         
+44         | No         | 0          | 0          | 0         
+45         | No         | 0          | 0          | 0         
+46         | No         | 0          | 0          | 0         
+47         | No         | 0          | 0          | 0         
+48         | No         | 0          | 0          | 0         
+49         | No         | 0          | 0          | 0         
+50         | No         | 0          | 0          | 0         
+51         | No         | 0          | 0          | 0         
+52         | No         | 0          | 0          | 0         
+53         | No         | 0          | 0          | 0         
+54         | No         | 0          | 0          | 0         
+55         | No         | 0          | 0          | 0         
+56         | No         | 0          | 0          | 0         
+57         | No         | 0          | 0          | 0         
+58         | No         | 0          | 0          | 0         
+59         | No         | 0          | 0          | 0         
+60         | No         | 0          | 0          | 0         
+61         | No         | 0          | 0          | 0         
+62         | No         | 0          | 0          | 0         
+63         | No         | 0          | 0          | 0         
+P71317: [25, 22, 18, 27, 24, 19, 28, 17, 31, 16, 23, 20, 21, 30, 29, 16]
+P71318: [12, 13, 3, 6, 2, 8, 1, 11, 9, 0, 10, 14, 4, 7, 15, 0]
+Frame      | Occupied   | DirtyBit   | Process    | Page      
+0          | Yes        | 1          | 71318      | 9         
+1          | Yes        | 0          | 71318      | 6         
+2          | Yes        | 0          | 71318      | 4         
+3          | Yes        | 0          | 71318      | 2         
+4          | Yes        | 0          | 71318      | 12        
+5          | Yes        | 0          | 71318      | 15        
+6          | Yes        | 1          | 71318      | 3         
+7          | Yes        | 1          | 71318      | 13        
+8          | Yes        | 1          | 71318      | 5         
+9          | Yes        | 1          | 71318      | 8         
+10         | Yes        | 0          | 71318      | 10        
+11         | Yes        | 0          | 71318      | 7         
+12         | Yes        | 0          | 71318      | 0         
+13         | Yes        | 0          | 71318      | 1         
+14         | Yes        | 1          | 71318      | 11        
+15         | Yes        | 0          | 71318      | 14        
+16         | Yes        | 1          | 71317      | 9         
+17         | Yes        | 1          | 71317      | 7         
+18         | Yes        | 1          | 71317      | 2         
+19         | Yes        | 1          | 71317      | 5         
+20         | Yes        | 1          | 71317      | 11        
+21         | Yes        | 1          | 71317      | 12        
+22         | Yes        | 0          | 71317      | 1         
+23         | Yes        | 0          | 71317      | 10        
+24         | Yes        | 1          | 71317      | 4         
+25         | Yes        | 0          | 71317      | 0         
+26         | Yes        | 1          | 71317      | 15        
+27         | Yes        | 0          | 71317      | 3         
+28         | Yes        | 1          | 71317      | 6         
+29         | Yes        | 0          | 71317      | 14        
+30         | Yes        | 0          | 71317      | 13        
+31         | Yes        | 0          | 71317      | 8         
+32         | No         | 0          | 0          | 0         
+33         | No         | 0          | 0          | 0         
+34         | No         | 0          | 0          | 0         
+35         | No         | 0          | 0          | 0         
+36         | No         | 0          | 0          | 0         
+37         | No         | 0          | 0          | 0         
+38         | No         | 0          | 0          | 0         
+39         | No         | 0          | 0          | 0         
+40         | No         | 0          | 0          | 0         
+41         | No         | 0          | 0          | 0         
+42         | No         | 0          | 0          | 0         
+43         | No         | 0          | 0          | 0         
+44         | No         | 0          | 0          | 0         
+45         | No         | 0          | 0          | 0         
+46         | No         | 0          | 0          | 0         
+47         | No         | 0          | 0          | 0         
+48         | No         | 0          | 0          | 0         
+49         | No         | 0          | 0          | 0         
+50         | No         | 0          | 0          | 0         
+51         | No         | 0          | 0          | 0         
+52         | No         | 0          | 0          | 0         
+53         | No         | 0          | 0          | 0         
+54         | No         | 0          | 0          | 0         
+55         | No         | 0          | 0          | 0         
+56         | No         | 0          | 0          | 0         
+57         | No         | 0          | 0          | 0         
+58         | No         | 0          | 0          | 0         
+59         | No         | 0          | 0          | 0         
+60         | No         | 0          | 0          | 0         
+61         | No         | 0          | 0          | 0         
+62         | No         | 0          | 0          | 0         
+63         | No         | 0          | 0          | 0         
+P71317: [25, 22, 18, 27, 24, 19, 28, 17, 31, 16, 23, 20, 21, 30, 29, 16]
+P71318: [12, 13, 3, 6, 2, 8, 1, 11, 9, 0, 10, 14, 4, 7, 15, 0]
+Frame      | Occupied   | DirtyBit   | Process    | Page      
+0          | Yes        | 0          | 71318      | 9         
+1          | Yes        | 0          | 71318      | 6         
+2          | Yes        | 0          | 71318      | 4         
+3          | Yes        | 1          | 71318      | 2         
+4          | Yes        | 0          | 71318      | 12        
+5          | Yes        | 0          | 71318      | 15        
+6          | Yes        | 0          | 71318      | 3         
+7          | Yes        | 1          | 71318      | 13        
+8          | Yes        | 1          | 71318      | 5         
+9          | Yes        | 1          | 71318      | 8         
+10         | Yes        | 0          | 71318      | 10        
+11         | Yes        | 0          | 71318      | 7         
+12         | Yes        | 1          | 71318      | 0         
+13         | Yes        | 0          | 71318      | 1         
+14         | Yes        | 0          | 71318      | 11        
+15         | Yes        | 0          | 71318      | 14        
+16         | Yes        | 0          | 71317      | 9         
+17         | Yes        | 1          | 71317      | 7         
+18         | Yes        | 0          | 71317      | 2         
+19         | Yes        | 0          | 71317      | 5         
+20         | Yes        | 0          | 71317      | 11        
+21         | Yes        | 0          | 71317      | 12        
+22         | Yes        | 0          | 71317      | 1         
+23         | Yes        | 1          | 71317      | 10        
+24         | Yes        | 1          | 71317      | 4         
+25         | Yes        | 1          | 71317      | 0         
+26         | Yes        | 1          | 71317      | 15        
+27         | Yes        | 1          | 71317      | 3         
+28         | Yes        | 0          | 71317      | 6         
+29         | Yes        | 1          | 71317      | 14        
+30         | Yes        | 0          | 71317      | 13        
+31         | Yes        | 1          | 71317      | 8         
+32         | No         | 0          | 0          | 0         
+33         | No         | 0          | 0          | 0         
+34         | No         | 0          | 0          | 0         
+35         | No         | 0          | 0          | 0         
+36         | No         | 0          | 0          | 0         
+37         | No         | 0          | 0          | 0         
+38         | No         | 0          | 0          | 0         
+39         | No         | 0          | 0          | 0         
+40         | No         | 0          | 0          | 0         
+41         | No         | 0          | 0          | 0         
+42         | No         | 0          | 0          | 0         
+43         | No         | 0          | 0          | 0         
+44         | No         | 0          | 0          | 0         
+45         | No         | 0          | 0          | 0         
+46         | No         | 0          | 0          | 0         
+47         | No         | 0          | 0          | 0         
+48         | No         | 0          | 0          | 0         
+49         | No         | 0          | 0          | 0         
+50         | No         | 0          | 0          | 0         
+51         | No         | 0          | 0          | 0         
+52         | No         | 0          | 0          | 0         
+53         | No         | 0          | 0          | 0         
+54         | No         | 0          | 0          | 0         
+55         | No         | 0          | 0          | 0         
+56         | No         | 0          | 0          | 0         
+57         | No         | 0          | 0          | 0         
+58         | No         | 0          | 0          | 0         
+59         | No         | 0          | 0          | 0         
+60         | No         | 0          | 0          | 0         
+61         | No         | 0          | 0          | 0         
+62         | No         | 0          | 0          | 0         
+63         | No         | 0          | 0          | 0         
+P71317: [25, 22, 18, 27, 24, 19, 28, 17, 31, 16, 23, 20, 21, 30, 29, 16]
+P71318: [12, 13, 3, 6, 2, 8, 1, 11, 9, 0, 10, 14, 4, 7, 15, 0]
+Frame      | Occupied   | DirtyBit   | Process    | Page      
+0          | Yes        | 1          | 71318      | 9         
+1          | Yes        | 1          | 71318      | 6         
+2          | Yes        | 0          | 71318      | 4         
+3          | Yes        | 0          | 71318      | 2         
+4          | Yes        | 1          | 71318      | 12        
+5          | Yes        | 1          | 71318      | 15        
+6          | Yes        | 1          | 71318      | 3         
+7          | Yes        | 0          | 71318      | 13        
+8          | Yes        | 0          | 71318      | 5         
+9          | Yes        | 0          | 71318      | 8         
+10         | Yes        | 1          | 71318      | 10        
+11         | Yes        | 0          | 71318      | 7         
+12         | Yes        | 1          | 71318      | 0         
+13         | Yes        | 1          | 71318      | 1         
+14         | Yes        | 1          | 71318      | 11        
+15         | Yes        | 0          | 71318      | 14        
+16         | Yes        | 0          | 71317      | 9         
+17         | Yes        | 1          | 71317      | 7         
+18         | Yes        | 1          | 71317      | 2         
+19         | Yes        | 0          | 71317      | 5         
+20         | Yes        | 0          | 71317      | 11        
+21         | Yes        | 1          | 71317      | 12        
+22         | Yes        | 0          | 71317      | 1         
+23         | Yes        | 0          | 71317      | 10        
+24         | Yes        | 1          | 71317      | 4         
+25         | Yes        | 0          | 71317      | 0         
+26         | Yes        | 1          | 71317      | 15        
+27         | Yes        | 1          | 71317      | 3         
+28         | Yes        | 0          | 71317      | 6         
+29         | Yes        | 1          | 71317      | 14        
+30         | Yes        | 0          | 71317      | 13        
+31         | Yes        | 0          | 71317      | 8         
+32         | No         | 0          | 0          | 0         
+33         | No         | 0          | 0          | 0         
+34         | No         | 0          | 0          | 0         
+35         | No         | 0          | 0          | 0         
+36         | No         | 0          | 0          | 0         
+37         | No         | 0          | 0          | 0         
+38         | No         | 0          | 0          | 0         
+39         | No         | 0          | 0          | 0         
+40         | No         | 0          | 0          | 0         
+41         | No         | 0          | 0          | 0         
+42         | No         | 0          | 0          | 0         
+43         | No         | 0          | 0          | 0         
+44         | No         | 0          | 0          | 0         
+45         | No         | 0          | 0          | 0         
+46         | No         | 0          | 0          | 0         
+47         | No         | 0          | 0          | 0         
+48         | No         | 0          | 0          | 0         
+49         | No         | 0          | 0          | 0         
+50         | No         | 0          | 0          | 0         
+51         | No         | 0          | 0          | 0         
+52         | No         | 0          | 0          | 0         
+53         | No         | 0          | 0          | 0         
+54         | No         | 0          | 0          | 0         
+55         | No         | 0          | 0          | 0         
+56         | No         | 0          | 0          | 0         
+57         | No         | 0          | 0          | 0         
+58         | No         | 0          | 0          | 0         
+59         | No         | 0          | 0          | 0         
+60         | No         | 0          | 0          | 0         
+61         | No         | 0          | 0          | 0         
+62         | No         | 0          | 0          | 0         
+63         | No         | 0          | 0          | 0         
+P71317: [25, 22, 18, 27, 24, 19, 28, 17, 31, 16, 23, 20, 21, 30, 29, 16]
+P71318: [12, 13, 3, 6, 2, 8, 1, 11, 9, 0, 10, 14, 4, 7, 15, 0]
+Address 4299 is not in a frame, pagefault
+Address 7697 is not in a frame, pagefault
+Address 16123 is not in a frame, pagefault
+Address 766 is not in a frame, pagefault
+Address 5742 is not in a frame, pagefault
+Address 2400 is not in a frame, pagefault
+Address 14200 is not in a frame, pagefault
+Address 14540 is not in a frame, pagefault
+Address 3621 is not in a frame, pagefault
+Address 1034 is not in a frame, pagefault
+Address 12962 is not in a frame, pagefault
+Address 9990 is not in a frame, pagefault
+Address 10325 is not in a frame, pagefault
+Address 8814 is not in a frame, pagefault
+Address 11297 is not in a frame, pagefault
+Address 6796 is not in a frame, pagefault

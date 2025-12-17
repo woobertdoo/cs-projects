@@ -352,9 +352,9 @@ void printSysStart() {
 int main(int argc, char** argv) {
 
     // Set up signal handler
-    //    signal(SIGALRM, freeAndExit);
+    signal(SIGALRM, freeAndExit);
     signal(SIGINT, freeAndExit);
-    //   alarm(5);
+    alarm(5);
 
     // Set Default Options
     // Default behavior will immediately exit the process
@@ -504,7 +504,10 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
         } else if (rcvbuf.status == 1) {
+            lfprintf(log_file, "OSS: Detected process %d terminating\n",
+                     rcvbuf.sender);
             printf("OSS: Detected process %d terminating\n", rcvbuf.sender);
+
             totalProcessesRan++;
             rmProcess(rcvbuf.sender);
             numProcessesRunning--;
@@ -512,6 +515,14 @@ int main(int argc, char** argv) {
             int reqAddress = rcvbuf.address;
             int page = getAddressPage(reqAddress);
             int processIndex = getProcessIndex(rcvbuf.sender);
+
+            const char* readWrite = rcvbuf.dirty == 0 ? "read" : "write";
+
+            lfprintf(log_file,
+                     "OSS: P%d requesting %s of address %d at time %d:%d\n",
+                     rcvbuf.sender, readWrite, reqAddress, *sec, *nano);
+            printf("OSS: P%d requesting %s of address %d at time %d:%d\n",
+                   rcvbuf.sender, readWrite, reqAddress, *sec, *nano);
 
             if (processTable[processIndex].pages[page] == -1) {
                 pageFaultCount++;
@@ -554,7 +565,7 @@ int main(int argc, char** argv) {
         long lastTime = lastSec * BILLION + lastNano;
         long now = *sec * BILLION + *nano;
 
-        if (now - lastTime >= BILLION / 2) {
+        if (now - lastTime >= BILLION) {
             lastSec = *sec;
             lastNano = *nano;
             printFrameTable(log_file);
